@@ -9,9 +9,7 @@ import (
 
 // Creates an RPC client that connects to addr.
 func NewClient(addr string) trib.Storage {
-    return &client{ ServerAddr: addr, 
-                    conn : nil
-                }
+    return &client{ ServerAddr: addr, conn : nil}
 }
 
 // Serve as a backend based on the given configuration
@@ -22,15 +20,20 @@ func ServeBack(b *trib.BackConfig) error {
 
     lis, err := net.Listen("tcp", b.Addr)
     if err != nil {
-        b.Ready <- false
+        if b.Ready != nil {
+            b.Ready <- false
+        }
         return err
     }
-
-    b.Ready <- true
+    if b.Ready != nil {
+        b.Ready <- true
+    }
     for {
         conn, err := lis.Accept()
         if err != nil {
-            b.Ready <- false
+            if b.Ready != nil {
+                b.Ready <- false
+            }
             return err
         }
 
