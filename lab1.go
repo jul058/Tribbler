@@ -9,13 +9,9 @@ import (
 
 // Creates an RPC client that connects to addr.
 func NewClient(addr string) trib.Storage {
-    conn := &client{ServerAddr: addr}
-    err := conn.Init()
-    if err != nil {
-        return nil
-    }
-
-    return conn
+    return &client{ ServerAddr: addr, 
+                    conn : nil
+                }
 }
 
 // Serve as a backend based on the given configuration
