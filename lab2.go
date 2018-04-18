@@ -1,12 +1,11 @@
 package triblab
 
 import (
-    "net/rpc"
 	"trib"
 )
 
 func NewBinClient(backs []string) trib.BinStorage {
-    return &BinStorageProxy{ backs: backs, conns: []*rpc.Client{} }
+    return &BinStorageProxy{ backs: backs }
 }
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
