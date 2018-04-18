@@ -34,6 +34,15 @@ func (self *client) Get(key string, value *string) error {
     }
     // perform the call
     err := self.conn.Call("Storage.Get", key, value)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
+    if err != nil {
+        return err
+    }
+    err = self.conn.Call("Storage.Get", key, value)
     if err != nil {
         return err
     }
@@ -50,10 +59,18 @@ func (self *client) Set(kv *trib.KeyValue, succ *bool) error {
     }
     // perform the call
     err := self.conn.Call("Storage.Set", kv, succ)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
     if err != nil {
         return err
     }
-
+    err = self.conn.Call("Storage.Set", kv, succ)
+    if err != nil {
+        return err
+    }
     return nil
 }
 
@@ -66,10 +83,18 @@ func (self *client) Keys(p *trib.Pattern, list *trib.List) error {
     }
     // perform the call
     err := self.conn.Call("Storage.Keys", p, list)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
     if err != nil {
         return err
     }
-
+    err = self.conn.Call("Storage.Keys", p, list)
+    if err != nil {
+        return err
+    }
     return nil
 }
 
@@ -82,10 +107,18 @@ func (self *client) ListGet(key string, list *trib.List) error {
     }
     // perform the call
     err := self.conn.Call("Storage.ListGet", key, list)
-    if err != nil {
+    if err == nil {
         return nil
     }
-
+    // retry
+    err = self.Init()
+    if err != nil {
+        return err
+    }
+    err = self.conn.Call("Storage.ListGet", key, list)
+    if err != nil {
+        return err
+    }
     return nil
 }
 
@@ -98,10 +131,18 @@ func (self *client) ListAppend(kv *trib.KeyValue, succ *bool) error {
     }
     // perform the call
     err := self.conn.Call("Storage.ListAppend", kv, succ)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
     if err != nil {
         return err
     }
-
+    err = self.conn.Call("Storage.ListAppend", kv, succ)
+    if err != nil {
+        return err
+    }
     return nil
 }
 
@@ -114,10 +155,18 @@ func (self *client) ListRemove(kv *trib.KeyValue, n *int) error {
     }
     // perform the call
     err := self.conn.Call("Storage.ListRemove", kv, n)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
     if err != nil {
         return err
     }
-
+    err = self.conn.Call("Storage.ListRemove", kv, n)
+    if err != nil {
+        return err
+    }
     return nil
 }
 
@@ -130,10 +179,18 @@ func (self *client) ListKeys(p *trib.Pattern, list *trib.List) error {
     }
     // perform the call
     err := self.conn.Call("Storage.ListKeys", p, list)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
     if err != nil {
         return err
     }
-
+    err = self.conn.Call("Storage.ListKeys", p, list)
+    if err != nil {
+        return err
+    }
     return nil
 }
 
@@ -146,9 +203,17 @@ func (self *client) Clock(atLeast uint64, ret *uint64) error {
     }
     // perform the call
     err := self.conn.Call("Storage.Clock", atLeast, ret)
+    if err == nil {
+        return nil
+    }
+    // retry
+    err = self.Init()
     if err != nil {
         return err
     }
-
+    err = self.conn.Call("Storage.Clock", atLeast, ret)
+    if err != nil {
+        return err
+    }
     return nil
 }

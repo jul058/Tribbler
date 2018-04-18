@@ -1,11 +1,12 @@
 package triblab
 
 import (
+    "net/rpc"
 	"trib"
 )
 
 func NewBinClient(backs []string) trib.BinStorage {
-	panic("todo")
+    return &BinStorageProxy{ backs: backs, conns: []*rpc.Client{} }
 }
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
@@ -13,5 +14,5 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 }
 
 func NewFront(s trib.BinStorage) trib.Server {
-	panic("todo")
+    return &Tribber{ binStorage: s }
 }
