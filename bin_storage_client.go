@@ -72,7 +72,7 @@ func (self *BinStorageClient) ListKeys(p *trib.Pattern, list *trib.List) error {
         return err
     }
 
-    self.listHandler(list, func(l []string, e string) []string {return append(l, colon.Unescape(e))})
+    self.listHandler(list, func(l []string, e string) []string {return append(l, colon.Unescape(strings.TrimPrefix(e, self.prefix)))})
     return nil
 }
 

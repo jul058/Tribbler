@@ -34,7 +34,6 @@ func TestBinStorage(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-
 	go run(addr1, ready1)
 	go run(addr2, ready2)
 
@@ -48,6 +47,7 @@ func TestBinStorage(t *testing.T) {
 	for addrk == addr1 || addrk == addr2 {
 		addrk = randaddr.Local()
 	}
+
 	go func() {
 		e := triblab.ServeKeeper(&trib.KeeperConfig{
 			Backs: []string{addr1, addr2},
