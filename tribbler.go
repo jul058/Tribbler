@@ -6,10 +6,12 @@ import (
     "sort"
     "time"
     "trib"
+    "sync"
 )
 
 type Tribber struct {
     binStorage trib.BinStorage
+    followListLock  sync.Mutex
 }
 var _ trib.Server = new(Tribber)
 
@@ -17,6 +19,19 @@ const users_list_key    = "USERS_LIST"
 const existed_key       = "EXISTED"
 const tribble_list_key  = "TRIBBLE_LIST"
 const follow_list_key   = "FOLLOW_LIST"
+
+func (self *Tribber) checkUserExistence(user string) (bool, error) {
+    storage := self.binStorage.Bin(users_list_key)
+    var exist string
+    err := storage.Get(user, &exist)
+    if err != nil {
+        return false, err
+    }
+    if exist != "" {
+        return true, nil
+    }
+    return false, nil
+}
 
 // Creates a user.
 // Returns error when the username is invalid;
@@ -26,17 +41,14 @@ func (self *Tribber) SignUp(user string) error {
     if trib.IsValidUsername(user) == false {
         return errors.New(fmt.Sprintf("SignUp::Invalid username '%s'.", user))
     }
-    storage := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := storage.Get(user, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(user); err != nil {
         return err
+    } else if exist == true {
+        return errors.New(fmt.Sprintf("SignUp::User '%s' already exists.", user))
     }
-    if exist != "" {
-        return errors.New(fmt.Sprintf("SignUp::Username '%s' already exists.", user))
-    }
+    storage := self.binStorage.Bin(users_list_key)
     var succ bool
-    err = storage.Set(&trib.KeyValue{ user, existed_key }, &succ)
+    err := storage.Set(&trib.KeyValue{ user, existed_key }, &succ)
     if err != nil {
         return err
     }
@@ -71,21 +83,18 @@ func (self *Tribber) ListUsers() ([]string, error) {
 // returns error when post is too long.
 func (self *Tribber) Post(who, post string, clock uint64) error {
     if len(post) > trib.MaxTribLen {
-        return errors.New(fmt.Sprintf("Post::Post '%s' has %d characters, too long.", len(post), post))
+        return errors.New(fmt.Sprintf("Post::'%s' has %d characters, too long.", len(post), post))
     }
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(who, &exist)
-    if err != nil {
+
+    if exist, err := self.checkUserExistence(who); err != nil {
         return err
-    }
-    if exist == "" {
-        return errors.New(fmt.Sprintf("Post::User '%s' does not exist.", who))
+    } else if exist == false {
+        return errors.New(fmt.Sprintf("Post::User '%s' does not exists.", who))
     }
 
     storage := self.binStorage.Bin(who)
     var newClock uint64
-    err = storage.Clock(clock, &newClock)
+    err := storage.Clock(clock, &newClock)
     if err != nil {
         return err
     }
@@ -109,18 +118,15 @@ func (self *Tribber) Post(who, post string, clock uint64) error {
 // List the tribs that a particular user posted.
 // Returns error when user has not signed up.
 func (self *Tribber) Tribs(user string) ([]*trib.Trib, error) {
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(user, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(user); err != nil {
         return []*trib.Trib{}, err
+    } else if exist == false {
+        return []*trib.Trib{}, errors.New(fmt.Sprintf("Tribs::User '%s' does not exists.", user))
     }
-    if exist == "" {
-        return []*trib.Trib{}, errors.New(fmt.Sprintf("Tribs::User '%s' does not exist.", user))
-    }
+
     storage := self.binStorage.Bin(user)
     userTribbleList := new(trib.List)
-    err = storage.ListGet(tribble_list_key, userTribbleList)
+    err := storage.ListGet(tribble_list_key, userTribbleList)
     if err != nil {
         return []*trib.Trib{}, err
     }
@@ -155,26 +161,22 @@ func (self *Tribber) Follow(who, whom string) error {
     if who == whom {
         return errors.New(fmt.Sprintf("Follow::Who and whom cannot be the same."))
     }
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(who, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(who); err != nil {
         return err
+    } else if exist == false {
+        return errors.New(fmt.Sprintf("Follow::User '%s' does not exists.", who))
     }
-    if exist == "" {
-        return errors.New(fmt.Sprintf("Follow::User '%s' does not exist.", who))
-    }
-    err = userList.Get(whom, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(whom); err != nil {
         return err
-    }
-    if exist == "" {
-        return errors.New(fmt.Sprintf("Follow::User '%s' does not exist.", whom))
+    } else if exist == false {
+        return errors.New(fmt.Sprintf("Tribs::User '%s' does not exists.", whom))
     }
 
     storage := self.binStorage.Bin(who)
     follow_list := new(trib.List)
-    err = storage.ListGet(follow_list_key, follow_list)
+    self.followListLock.Lock()
+    defer self.followListLock.Unlock()
+    err := storage.ListGet(follow_list_key, follow_list)
     if err != nil {
         return err
     }
@@ -205,26 +207,22 @@ func (self *Tribber) Unfollow(who, whom string) error {
     if who == whom {
         return errors.New(fmt.Sprintf("Unfollow::Who and whom cannot be the same."))
     }
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(who, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(who); err != nil {
         return err
+    } else if exist == false {
+        return errors.New(fmt.Sprintf("Unfollow::User '%s' does not exists.", who))
     }
-    if exist == "" {
-        return errors.New(fmt.Sprintf("Unfollow::User '%s' does not exist.", who))
-    }
-    err = userList.Get(whom, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(whom); err != nil {
         return err
-    }
-    if exist == "" {
-        return errors.New(fmt.Sprintf("Unfollow::User '%s' does not exist.", whom))
+    } else if exist == false {
+        return errors.New(fmt.Sprintf("Unfollow::User '%s' does not exists.", whom))
     }
 
     storage := self.binStorage.Bin(who)
     follow_list := new(trib.List)
-    err = storage.ListGet(follow_list_key, follow_list)
+    self.followListLock.Lock()
+    defer self.followListLock.Unlock()
+    err := storage.ListGet(follow_list_key, follow_list)
     if err != nil {
         return err
     }
@@ -251,26 +249,22 @@ func (self *Tribber) IsFollowing(who, whom string) (bool, error) {
     if who == whom {
         return false, errors.New(fmt.Sprintf("IsFollowing::Who and whom cannot be the same."))
     }
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(who, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(who); err != nil {
         return false, err
+    } else if exist == false {
+        return false, errors.New(fmt.Sprintf("IsFollowing::User '%s' does not exists.", who))
     }
-    if exist == "" {
-        return false, errors.New(fmt.Sprintf("IsFollowing::User '%s' does not exist.", who))
-    }
-    err = userList.Get(whom, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(whom); err != nil {
         return false, err
-    }
-    if exist == "" {
-        return false, errors.New(fmt.Sprintf("IsFollowing::User '%s' does not exist.", whom))
+    } else if exist == false {
+        return false, errors.New(fmt.Sprintf("IsFollowing::User '%s' does not exists.", whom))
     }
 
     storage := self.binStorage.Bin(who)
     follow_list := new(trib.List)
-    err = storage.ListGet(follow_list_key, follow_list)
+    self.followListLock.Lock()
+    defer self.followListLock.Unlock()
+    err := storage.ListGet(follow_list_key, follow_list)
     if err != nil {
         return false, err
     }
@@ -289,23 +283,19 @@ func (self *Tribber) IsFollowing(who, whom string) (bool, error) {
 // if and only if the 2000'th user is generate d by concurrent Follow()
 // calls.
 func (self *Tribber) Following(who string) ([]string, error) {
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(who, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(who); err != nil {
         return []string{}, err
+    } else if exist == false {
+        return []string{}, errors.New(fmt.Sprintf("Following::User '%s' does not exists.", who))
     }
-    if exist == "" {
-        return []string{}, errors.New(fmt.Sprintf("Following::User '%s' does not exist.", who))
-    }
-
     storage := self.binStorage.Bin(who)
-    follow_list := new(trib.List)
-    err = storage.ListGet(follow_list_key, follow_list)
+    follow_list  := new(trib.List)
+    self.followListLock.Lock()
+    defer self.followListLock.Unlock()
+    err := storage.ListGet(follow_list_key, follow_list)
     if err != nil {
         return []string{}, err
     }
-
     return follow_list.L, nil
 }
 
