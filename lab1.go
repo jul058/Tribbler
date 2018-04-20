@@ -2,8 +2,8 @@ package triblab
 
 import (
     "net"
+    "net/http"
     "net/rpc"
-    "net/rpc/jsonrpc"
     "trib"
 )
 
@@ -20,24 +20,14 @@ func ServeBack(b *trib.BackConfig) error {
     lis, err := net.Listen("tcp", b.Addr)
     if err != nil {
         if b.Ready != nil {
-            b.Ready <- false
+            // b.Ready <- false
+            go func(ch chan<- bool) { ch <- false } (b.Ready)
         }
         return err
     }
     if b.Ready != nil {
-        b.Ready <- true
+        go func(ch chan<- bool) { ch <- true } (b.Ready)
     }
 
-    for {
-        conn, err := lis.Accept()
-        if err != nil {
-            if b.Ready != nil {
-                b.Ready <- false
-            }
-            return err
-        }
-
-        go server.ServeCodec(jsonrpc.NewServerCodec(conn))
-    }
-    return nil
+    return http.Serve(lis, server)
 }

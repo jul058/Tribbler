@@ -1,9 +1,7 @@
 package triblab
 
 import (
-    "net"
     "net/rpc"
-    "net/rpc/jsonrpc"
     "trib"
 )
 
@@ -15,14 +13,9 @@ var _ trib.Storage = new(client)
 
 func (self *client) Init() error {
     // connect to server
-    conn, err := net.Dial("tcp", self.ServerAddr)
-
-    if err != nil {
-        return err
-    }
-
-    self.conn = rpc.NewClientWithCodec(jsonrpc.NewClientCodec(conn))
-    return nil
+    var err error
+    self.conn, err = rpc.DialHTTP("tcp", self.ServerAddr)
+    return err
 }
 
 func (self *client) Get(key string, value *string) error {
@@ -81,9 +74,13 @@ func (self *client) Keys(p *trib.Pattern, list *trib.List) error {
             return err
         }
     }
+    list.L = nil
     // perform the call
     err := self.conn.Call("Storage.Keys", p, list)
     if err == nil {
+        if list.L == nil {
+            list.L = []string{}
+        }
         return nil
     }
     // retry
@@ -95,6 +92,9 @@ func (self *client) Keys(p *trib.Pattern, list *trib.List) error {
     if err != nil {
         return err
     }
+    if list.L == nil {
+        list.L = []string{}
+    }
     return nil
 }
 
@@ -105,9 +105,13 @@ func (self *client) ListGet(key string, list *trib.List) error {
             return err
         }
     }
+    list.L = nil
     // perform the call
     err := self.conn.Call("Storage.ListGet", key, list)
     if err == nil {
+        if list.L == nil {
+            list.L = []string{}
+        }
         return nil
     }
     // retry
@@ -118,6 +122,9 @@ func (self *client) ListGet(key string, list *trib.List) error {
     err = self.conn.Call("Storage.ListGet", key, list)
     if err != nil {
         return err
+    }
+    if list.L == nil {
+        list.L = []string{}
     }
     return nil
 }
@@ -177,9 +184,13 @@ func (self *client) ListKeys(p *trib.Pattern, list *trib.List) error {
             return err
         }
     }
+    list.L = nil
     // perform the call
     err := self.conn.Call("Storage.ListKeys", p, list)
     if err == nil {
+        if list.L == nil {
+            list.L = []string{}
+        }
         return nil
     }
     // retry
