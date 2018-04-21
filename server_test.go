@@ -77,7 +77,9 @@ func TestServerConcur(t *testing.T) {
 
 	startKeeper(t, addr)
 
-	server := entries.MakeFrontSingle(addr)
+	server1 := entries.MakeFrontSingle(addr)
+	server2 := entries.MakeFrontSingle(addr)
 
-	tribtest.CheckServerConcur(t, server)
+	// tribtest.CheckServerConcur(t, server1)
+	triblab.MyCheckServerConcur(t, server1, server2)
 }

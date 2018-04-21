@@ -1,7 +1,13 @@
 package triblab
 
 import (
+    "sync"
 	"trib"
+)
+
+var (
+    tribberServer trib.Server
+    once sync.Once
 )
 
 func NewBinClient(backs []string) trib.BinStorage {
@@ -13,5 +19,9 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 }
 
 func NewFront(s trib.BinStorage) trib.Server {
-    return &Tribber{ binStorage: s }
+    // Singleton 
+    once.Do(func() {
+        tribberServer = &Tribber{ binStorage: s }
+    })
+    return tribberServer
 }

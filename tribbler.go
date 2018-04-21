@@ -208,12 +208,12 @@ func (self *Tribber) Unfollow(who, whom string) error {
         return errors.New(fmt.Sprintf("Unfollow::Who and whom cannot be the same."))
     }
     if exist, err := self.checkUserExistence(who); err != nil {
-        return err
+        return errors.New(fmt.Sprintf("Unfollow::" + err.Error()))
     } else if exist == false {
         return errors.New(fmt.Sprintf("Unfollow::User '%s' does not exists.", who))
     }
     if exist, err := self.checkUserExistence(whom); err != nil {
-        return err
+        return errors.New(fmt.Sprintf("Unfollow::" + err.Error()))
     } else if exist == false {
         return errors.New(fmt.Sprintf("Unfollow::User '%s' does not exists.", whom))
     }
@@ -224,18 +224,19 @@ func (self *Tribber) Unfollow(who, whom string) error {
     defer self.followListLock.Unlock()
     err := storage.ListGet(follow_list_key, follow_list)
     if err != nil {
-        return err
+        return errors.New(fmt.Sprintf("Unfollow::" + err.Error()))
     }
     var removed int
     for _, element := range follow_list.L {
         if element == whom {
             err = storage.ListRemove(&trib.KeyValue{follow_list_key, element}, &removed)
             if err != nil {
-                return err
+                return errors.New(fmt.Sprintf("Unfollow::" + err.Error()))
             }
             if removed != 1 {
                 return errors.New(fmt.Sprintf("Unfollow::Remove more than one person."))
             }
+            // fmt.Printf("Unfollow::Normal return.")
             return nil
         }
     }
