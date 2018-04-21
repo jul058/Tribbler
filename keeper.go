@@ -21,26 +21,42 @@ func (self *Keeper) StartKeeper() error {
     if self.kc.Ready != nil {
         self.kc.Ready <- true
     }
-    var ret uint64
-    synClock := uint64(0)
+    
+    ticker := time.NewTicker(1 * time.Second)
     errorChannel := make(chan error)
+    synClockChannel := make(chan uint64)
     go func() {
+        var ret uint64
+        synClock := uint64(0)
         for {
-            for _, backend := range self.backends {
-                err := backend.Clock(synClock, &ret)
-                if err != nil {
-                    errorChannel <- err
-                }
-                if ret > synClock {
-                    synClock = ret
-                } else {
+            select {
+                // https://stackoverflow.com/questions/16466320/is-there-a-way-to-do-repetitive-tasks-at-intervals-in-golang
+                // this is better. Somehow equivalent to setInterval in js
+                // time.Sleep will have timeskew eventually
+                case <- ticker.C: 
+                    for _, backend := range self.backends {
+                        go func() {
+                            err := backend.Clock(synClock, &ret)
+                            if err != nil {
+                                errorChannel <- err
+                            }
+                            synClockChannel <- ret
+                        }()
+                    }
+                    for range self.backends {
+                        if clock := <- synClockChannel; clock > synClock {
+                            synClock = clock
+                        }
+                    }
+                    // clock synchorizes within 2-3 seconds(depending on how you count)
+                    // one back-end trivially satisfies sync
+                    // two and above inducutively satisfy sync
                     synClock += 1
-                }
+                    // time.Sleep(1 * time.Second)
             }
-            time.Sleep(1 * time.Second)
         }
     }()
 
-    err := <- errorChannel
-    return err
+    // will return when errorChannel is unblocked
+    return <- errorChannel
 }

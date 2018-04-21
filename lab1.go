@@ -20,13 +20,12 @@ func ServeBack(b *trib.BackConfig) error {
     lis, err := net.Listen("tcp", b.Addr)
     if err != nil {
         if b.Ready != nil {
-            // b.Ready <- false
-            go func(ch chan<- bool) { ch <- false } (b.Ready)
+            b.Ready <- false
         }
         return err
     }
     if b.Ready != nil {
-        go func(ch chan<- bool) { ch <- true } (b.Ready)
+        b.Ready <- true
     }
 
     return http.Serve(lis, server)

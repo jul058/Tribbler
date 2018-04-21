@@ -143,6 +143,7 @@ func (self *Tribber) Tribs(user string) ([]*trib.Trib, error) {
     sort.Sort(TribblerOrder(ret))
     if len(ret) > trib.MaxTribFetch {
         ret = ret[len(ret)-trib.MaxTribFetch:len(ret)]
+        
     }
     return ret, nil
 }
@@ -303,19 +304,15 @@ func (self *Tribber) Following(who string) ([]string, error) {
 // List the tribs of someone's following users (including himself).
 // Returns error when user has not signed up.
 func (self *Tribber) Home(user string) ([]*trib.Trib, error) {
-    userList := self.binStorage.Bin(users_list_key)
-    var exist string
-    err := userList.Get(user, &exist)
-    if err != nil {
+    if exist, err := self.checkUserExistence(user); err != nil {
         return []*trib.Trib{}, err
-    }
-    if exist == "" {
-        return []*trib.Trib{}, errors.New(fmt.Sprintf("Home::User %s does not exist.", user))
+    } else if exist == false {
+        return []*trib.Trib{}, errors.New(fmt.Sprintf("Home::User '%s' does not exist.", user))
     }
 
     storage := self.binStorage.Bin(user)
     follow_list := new(trib.List)
-    err = storage.ListGet(follow_list_key, follow_list)
+    err := storage.ListGet(follow_list_key, follow_list)
     if err != nil {
         return []*trib.Trib{}, err
     }
