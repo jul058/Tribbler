@@ -10,7 +10,6 @@ import (
 
 type Tribber struct {
     binStorage trib.BinStorage
-    cache []string
 }
 var _ trib.Server = new(Tribber)
 
@@ -101,9 +100,6 @@ func (self *Tribber) SignUp(user string) error {
 // of at lest 20 of them needs to be listed.
 // The result should be sorted in alphabetical order.
 func (self *Tribber) ListUsers() ([]string, error) {
-    if self.cache != nil && len(self.cache) == trib.MinListUser {
-        return self.cache, nil
-    }
     storage := self.binStorage.Bin(users_list_key)
     userList := new(trib.List)
     err := storage.Keys(&trib.Pattern{ "", "" }, userList)
@@ -114,7 +110,6 @@ func (self *Tribber) ListUsers() ([]string, error) {
         userList.L = userList.L[0:trib.MinListUser]
     }
     sort.Strings(userList.L)
-    self.cache = userList.L
     return userList.L, nil
 }
 
