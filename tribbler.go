@@ -10,6 +10,7 @@ import (
 
 type Tribber struct {
     binStorage trib.BinStorage
+    cache []string
 }
 var _ trib.Server = new(Tribber)
 
@@ -29,6 +30,44 @@ func (self *Tribber) checkUserExistence(bin_key, user string) (bool, error) {
         return true, nil
     }
     return false, nil
+}
+
+func (self *Tribber) gc(user string) error {
+    storage := self.binStorage.Bin(user)
+    tribble_list := new(trib.List)
+    err := storage.ListGet(tribble_list_key, tribble_list)
+    ret := []*trib.Trib{}
+    var tribbleStr string
+    var removed int
+    if err != nil {
+        return err
+    }
+    var tribble *trib.Trib
+    if len(tribble_list.L) > trib.MaxTribFetch {
+        for _, element := range tribble_list.L {
+            tribble, err = StringToTrib(element)
+            if err != nil {
+                return err
+            }
+            ret = append(ret, tribble)
+        }
+        sort.Sort(TribblerOrder(ret))
+    
+        for i := 0; i < len(ret)-trib.MaxTribFetch; i++ {
+            tribbleStr, err = TribToString(ret[i])
+            if err != nil {
+                return err
+            }
+            err = storage.ListRemove(&trib.KeyValue{tribble_list_key, tribbleStr}, &removed)
+            if err != nil {
+                return err
+            }
+            if removed != 1 {
+                return errors.New(fmt.Sprintf("GC::Fail to remove precisely one post"))
+            }
+        }
+    }
+    return nil
 }
 
 // Creates a user.
@@ -62,6 +101,9 @@ func (self *Tribber) SignUp(user string) error {
 // of at lest 20 of them needs to be listed.
 // The result should be sorted in alphabetical order.
 func (self *Tribber) ListUsers() ([]string, error) {
+    if self.cache != nil && len(self.cache) == trib.MinListUser {
+        return self.cache, nil
+    }
     storage := self.binStorage.Bin(users_list_key)
     userList := new(trib.List)
     err := storage.Keys(&trib.Pattern{ "", "" }, userList)
@@ -72,6 +114,7 @@ func (self *Tribber) ListUsers() ([]string, error) {
         userList.L = userList.L[0:trib.MinListUser]
     }
     sort.Strings(userList.L)
+    self.cache = userList.L
     return userList.L, nil
 }
 
@@ -110,6 +153,10 @@ func (self *Tribber) Post(who, post string, clock uint64) error {
     if succ == false {
         return errors.New(fmt.Sprintf("Post::Failed due to Storage error."))
     }
+    // 1/5 of the chance gc gets run
+    if newClock % uint64(5) == 0 {
+        go self.gc(who)
+    }
     return nil
 }
 
@@ -141,7 +188,7 @@ func (self *Tribber) Tribs(user string) ([]*trib.Trib, error) {
     sort.Sort(TribblerOrder(ret))
     if len(ret) > trib.MaxTribFetch {
         ret = ret[len(ret)-trib.MaxTribFetch:len(ret)]
-
+        go self.gc(user)
     }
     return ret, nil
 }
@@ -309,3 +356,4 @@ func (self *Tribber) Home(user string) ([]*trib.Trib, error) {
     }
     return ret, nil
 }
+    
