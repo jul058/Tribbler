@@ -65,7 +65,7 @@ func MyCacheConcurTest(t *testing.T, server1 trib.Server, server2 trib.Server) {
     t.Logf("signUp finish at %s", time.Now())
 
     userNumChan := make(chan int, nconcur*2)
-    for i := 0; i < ntimes; i++ {
+    for i := 0; i < ntimes/10; i++ {
         // t.Logf("%d, ", i)
         cnt := 0
         for j := 0; j < nconcur; j++ {
