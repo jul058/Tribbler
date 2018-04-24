@@ -4,6 +4,7 @@ import (
     "runtime"
     "runtime/debug"
     "strconv"
+    "time"
     "testing"
 
     "trib"
@@ -32,18 +33,11 @@ func MyCacheConcurTest(t *testing.T, server1 trib.Server, server2 trib.Server) {
         errorChan <- e
     }
 
-    listUser := func(done chan<- bool, errorChan chan<- error, userNumChan chan<- int, server trib.Server) {
-        users, e := server.ListUsers()
-        done <- (e == nil)
-        errorChan <- e
-        userNumChan <- len(users)
-    }
-
     nconcur := 2
     ntimes  := 10000
     done := make(chan bool, nconcur*2)
     errorChan := make(chan error, nconcur*2)
-    userNumChan := make(chan int, nconcur*2)
+    
     for i := 0; i < ntimes; i++ {
         cnt := 0
         for j := 0; j < nconcur; j++ {
@@ -61,7 +55,18 @@ func MyCacheConcurTest(t *testing.T, server1 trib.Server, server2 trib.Server) {
         as(cnt == nconcur*2)
     }
 
+    listUser := func(done chan<- bool, errorChan chan<- error, userNumChan chan<- int, server trib.Server) {
+        users, e := server.ListUsers()
+        done <- (e == nil)
+        errorChan <- e
+        userNumChan <- len(users)
+    }
+
+    t.Logf("signUp finish at %s", time.Now())
+
+    userNumChan := make(chan int, nconcur*2)
     for i := 0; i < ntimes; i++ {
+        // t.Logf("%d, ", i)
         cnt := 0
         for j := 0; j < nconcur; j++ {
             go listUser(done, errorChan, userNumChan, server1)
@@ -76,4 +81,6 @@ func MyCacheConcurTest(t *testing.T, server1 trib.Server, server2 trib.Server) {
         }
         as(cnt == nconcur*2)
     }
+
+    t.Logf("listUser finish at %s", time.Now())
 }

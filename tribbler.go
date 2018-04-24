@@ -14,6 +14,7 @@ type Tribber struct {
 var _ trib.Server = new(Tribber)
 
 const users_list_key        = "USERS_LIST"
+const users_list_cache      = "USERS_LIST_CACHE"
 const existed_key           = "EXISTED"
 const absent_key            = "ABSENT"
 const tribble_list_key      = "TRIBBLE_LIST"
@@ -100,16 +101,41 @@ func (self *Tribber) SignUp(user string) error {
 // of at lest 20 of them needs to be listed.
 // The result should be sorted in alphabetical order.
 func (self *Tribber) ListUsers() ([]string, error) {
+    cache := self.binStorage.Bin(users_list_cache)
     storage := self.binStorage.Bin(users_list_key)
     userList := new(trib.List)
-    err := storage.Keys(&trib.Pattern{ "", "" }, userList)
+    var succ bool
+
+    // check whether cache already has it
+    err := cache.Keys(&trib.Pattern{ "", "" }, userList)
     if err != nil {
         return []string{}, err
     }
-    if len(userList.L) > trib.MinListUser {
+    if len(userList.L) >= trib.MinListUser {
+        sort.Strings(userList.L)
         userList.L = userList.L[0:trib.MinListUser]
+        return userList.L, nil
+    }
+
+    // cache does not have it, do a full look up
+    err = storage.Keys(&trib.Pattern{ "", "" }, userList)
+    if err != nil {
+        return []string{}, err
     }
     sort.Strings(userList.L)
+    if len(userList.L) > trib.MinListUser {
+        userList.L = userList.L[0:trib.MinListUser]
+        // update cache
+        for _, user := range userList.L {
+            err = cache.Set(&trib.KeyValue{ user, existed_key }, &succ)
+            // ignore err and succ since this is caching, could write to log in the future
+            if err != nil {
+                return []string{}, err
+            } else if succ != true {
+                return []string{}, errors.New(fmt.Sprintf("ListUsers::Caching failed"))
+            } 
+        }
+    }
     return userList.L, nil
 }
 

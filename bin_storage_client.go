@@ -9,7 +9,6 @@ import (
 type BinStorageClient struct {
     prefix string
     client trib.Storage
-    userListCache []string
 }
 var _ trib.Storage = new(BinStorageClient)
 
@@ -35,25 +34,13 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
 }
 
 func (self *BinStorageClient) Keys(p *trib.Pattern, list *trib.List) error {
-    // binStorageClient user list cache
-    if self.prefix == colon.Escape(users_list_key+"::") && len(self.userListCache) >= trib.MinListUser {
-        list.L = self.userListCache
-        return nil
-    }
     myP := &trib.Pattern{ self.prefix + colon.Escape(p.Prefix), colon.Escape(p.Suffix) }
     err := self.client.Keys(myP, list)
     if err != nil {
         return err
     }
 
-    self.listHandler(list, 
-                    func(l []string, e string) []string {
-                        return append(l, colon.Unescape(strings.TrimPrefix(e, self.prefix)))
-                    })
-    // only store userListCache when looking up user list, otherwise waste memory on other instances
-    if self.prefix == colon.Escape(users_list_key+"::") {
-        self.userListCache = list.L
-    }
+    self.listHandler(list, func(l []string, e string) []string {return append(l, colon.Unescape(strings.TrimPrefix(e, self.prefix)))})
     return nil
 }
 
