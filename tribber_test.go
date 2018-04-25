@@ -71,6 +71,10 @@ func MyTribberConcurTest(t *testing.T, server1 trib.Server, server2 trib.Server)
 
     t.Logf("After first fetch/Before second post at %s", time.Now())
 
+    for _, element := range tribbers {
+        t.Logf("User: %s\nMessage: %s\nTime: %s\nClock: %d\n", element.User, element.Message, element.Time, element.Clock)
+    }
+
     for i := 0; i < ntimes; i++ {
         cnt := 0
         for j := 0; j < nconcur; j++ {
