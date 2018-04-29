@@ -4,6 +4,7 @@ import (
     "sync"
     "trib"
     "trib/colon"
+    "net/rpc"
 )
 
 type BinStorageProxy struct {
@@ -27,5 +28,20 @@ func (self *BinStorageProxy) Init() {
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
     self.Init()
     hash := NewHash(name)
-    return &BinStorageClient{ prefix: colon.Escape(name + "::"), client: self.clients[hash % uint32(len(self.clients))] }
+    num := hash % uint32(len(self.clients))
+
+    //iterately to find available back-end
+    var bsc trib.Storage
+    for true {
+      _, err := rpc.DialHTTP("tcp", self.backs[num])
+      if err == nil {
+        bsc = &BinStorageClient{ prefix: colon.Escape(name + "::"), client: self.clients[num]}
+        break
+      }
+      num = num + 1
+      if num >= uint32(len(self.clients)) {
+        num = 0
+      }
+    }
+    return bsc
 }
