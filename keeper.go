@@ -180,15 +180,17 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
 
 func (self *Keeper) join(newBackend trib.Storage, index int) {
     //copy data belongs to this backend back to itself
-    for backupIndex, logmap := range self.bitmap {
-      if logmap[index] == true {
+    for backupIndex := (index - 1) % len(self.bitmap);
+	backupIndex != index;
+	backupIndex= ((backupIndex - 1) % len(self.bitmap)) {
+      if self.bitmap[backupIndex][index] == true {
         self.replicateLog(backupIndex, index)
         //stop this replicate
-        logmap[index] = false
+        self.bitmap[backupIndex][index] = false
         break
       }
     }
-
+    self.aliveBackends[newBackend] = true
     //set the new backup back-end for newBackend
     //go replicate(index, getSuccessor(index))
 
