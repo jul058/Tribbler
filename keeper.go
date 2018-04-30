@@ -12,7 +12,7 @@ const log_key = "LOG_KEY"
 type Keeper struct {
     kc *trib.KeeperConfig
     backends []trib.Storage
-    aliveBackends map[trib.Storage] bool
+    aliveBackends map[int] bool
     bitmap map[int] (map[int] bool)
 
     aliveBackendsLock sync.Mutex
@@ -51,7 +51,6 @@ func (self *Keeper) StartKeeper() error {
                         go func() {
                             err := backend.Clock(synClock, &ret)
                             if err != nil {
-                                // errorChannel <- err
                                 // heartbeat fails
                                 if self.aliveBackends[backend] == true {
                                     go self.crash(backend, index)
@@ -86,6 +85,7 @@ func (self *Keeper) StartKeeper() error {
 
 
 func (self *Keeper) replicateLog(replicatee, replicator int) {
+    replicator %= len(self.backends)
     for replicator == replicatee {
         replicator += 1
         replicator %= len(self.backends)
