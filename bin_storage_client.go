@@ -42,7 +42,7 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
     }
 
     var succ bool
-    err = self.client.ListAppend(&trib.KeyValue{"LOG"+string(self.id), log}, &succ)
+    err = self.client.ListAppend(&trib.KeyValue{log_key+string(self.id), log}, &succ)
     if !succ {
 	    return fmt.Errorf("LOG Set failed.  id: %q", string(self.id))
     }
@@ -75,7 +75,7 @@ func (self *BinStorageClient) ListGet(key string, list *trib.List) error {
 func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
     myKv := &trib.KeyValue{ self.prefix + colon.Escape(kv.Key), colon.Escape(kv.Value) }
     err := self.client.ListAppend(myKv, succ)
-    if err != nil || kv.Key == "LOG"+string(self.id) {
+    if err != nil || kv.Key == log_key+string(self.id) {
 	    return err
     }
 
@@ -85,7 +85,7 @@ func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
     }
 
     var succ bool
-    err = self.client.ListAppend(&trib.KeyValue{"LOG"+string(self.id), log}, &succ)
+    err = self.client.ListAppend(&trib.KeyValue{log_key+string(self.id), log}, &succ)
     if !succ {
 	    return fmt.Errorf("LOG ListAppend failed.  id: %q", string(self.id))
     }
@@ -106,7 +106,7 @@ func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
     }
 
     var succ bool
-    err = self.client.ListAppend(&trib.KeyValue{"LOG"+string(self.id), log}, &succ)
+    err = self.client.ListAppend(&trib.KeyValue{log_key+string(self.id), log}, &succ)
     if !succ {
 	    return fmt.Errorf("LOG ListRemove failed.  id: %q", string(self.id))
     }
