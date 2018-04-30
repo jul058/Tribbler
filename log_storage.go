@@ -1,15 +1,15 @@
 package triblab
-import {
+import (
 	"encoding/json"
 	"trib"
+)
+
+type LogEntry struct {
+	Opcode string
+	Kv trib.KeyValue
 }
 
-type Log_entry struct {
-	opcode string
-	kv trib.KeyValue
-}
-
-func LogToString(src *Log_entry) (string, error) {
+func LogToString(src *LogEntry) (string, error) {
 	dst, err := json.Marshal(*src)
 	if err != nil {
 		return string(dst), err
@@ -18,8 +18,8 @@ func LogToString(src *Log_entry) (string, error) {
 	return string(dst), nil
 }
 
-func StringToLog(src string) (*Log_entry, error) {
-	var dst Log_entry
+func StringToLog(src string) (*LogEntry, error) {
+	var dst LogEntry
 	err := json.Unmarshal([]byte(src), &dst)
 	if err != nil {
 		return &dst, err

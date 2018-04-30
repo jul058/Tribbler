@@ -1,6 +1,7 @@
 package triblab
 
 import (
+    "fmt"
     "strings"
     "trib"
     "trib/colon"
@@ -36,18 +37,22 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
 	    return err
     }
 
-    log, e := LogToString(&Log_entry{"Set", *myKv})
+    log, e := LogToString(&LogEntry{"Set", *myKv})
     if e != nil {
 	    return e
     }
 
-    var succ bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key+string(self.id), log}, &succ)
-    if !succ {
+    var logSucc bool
+    err = self.client.ListAppend(&trib.KeyValue{log_key, log}, &logSucc)
+    if err != nil {
+        return err
+    }
+
+    if logSucc == false {
 	    return fmt.Errorf("LOG Set failed.  id: %q", string(self.id))
     }
 
-    return err
+    return nil
 }
 
 func (self *BinStorageClient) Keys(p *trib.Pattern, list *trib.List) error {
@@ -75,22 +80,25 @@ func (self *BinStorageClient) ListGet(key string, list *trib.List) error {
 func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
     myKv := &trib.KeyValue{ self.prefix + colon.Escape(kv.Key), colon.Escape(kv.Value) }
     err := self.client.ListAppend(myKv, succ)
-    if err != nil || kv.Key == log_key+string(self.id) {
+    if err != nil {
 	    return err
     }
 
-    log, e := LogToString(&Log_entry{"ListAppend", *myKv})
+    log, e := LogToString(&LogEntry{"ListAppend", *myKv})
     if e != nil {
 	    return e
     }
+    var logSucc bool
+    err = self.client.ListAppend(&trib.KeyValue{log_key, log}, &logSucc)
+    if err != nil {
+        return err
+    }
 
-    var succ bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key+string(self.id), log}, &succ)
-    if !succ {
+    if logSucc == false {
 	    return fmt.Errorf("LOG ListAppend failed.  id: %q", string(self.id))
     }
 
-    return err
+    return nil
 }
 
 func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
@@ -100,18 +108,22 @@ func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
 	    return err
     }
 
-    log, e := LogToString(&Log_entry{"ListRemove", *myKv})
+    log, e := LogToString(&LogEntry{"ListRemove", *myKv})
     if e != nil {
 	    return e
     }
 
-    var succ bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key+string(self.id), log}, &succ)
-    if !succ {
+    var logSucc bool
+    err = self.client.ListAppend(&trib.KeyValue{log_key, log}, &logSucc)
+    if err != nil {
+        return err 
+    }
+
+    if logSucc == false {
 	    return fmt.Errorf("LOG ListRemove failed.  id: %q", string(self.id))
     }
 
-    return err
+    return nil
 }
 
 func (self *BinStorageClient) ListKeys(p *trib.Pattern, list *trib.List) error {

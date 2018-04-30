@@ -1,7 +1,7 @@
 package triblab
 
 import (
-    "encoding/json"
+    // "encoding/json"
     "sync"
     "time"
     "trib"
@@ -57,7 +57,7 @@ func (self *Keeper) StartKeeper() error {
                             } else {
                                 aliveNum += 1
                                 if self.aliveBackends[backend] == false {
-                                    go self.join()
+                                    go self.join(backend)
                                 }
                             }
                             synClockChannel <- ret
@@ -83,31 +83,31 @@ func (self *Keeper) StartKeeper() error {
     return <-errorChannel
 }
 
-func (self *Keeper) replicateLog(srcLog *trib.List, srcIndex int) {
-    for {
-        successorIndex := self.getSuccessor(srcIndex)
-        successor := self.backends[successorIndex]
-        var succ bool
-        for _, logEntry := range srcLog.L {
-            // shouldn't be log_key, b/c we are replicating someone else's data
-            successor.ListAppend(&trib.KeyValue{log_key, logEntry}, &succ)
-            if err != nill || succ == false {
-                srcIndex = successorIndex
-                // this means the backend has either crashed or, for some reason, failed
-                continue
-            }
-        }
-        // TODO: mark log key as 'complete'
-        // mark the successor as true
-        self.bitmap[srcIndex][successorIndex] = true
+// func (self *Keeper) replicateLog(srcLog *trib.List, srcIndex int) {
+//     for {
+//         successorIndex := self.getSuccessor(srcIndex)
+//         successor := self.backends[successorIndex]
+//         var succ bool
+//         for _, logEntry := range srcLog.L {
+//             // shouldn't be log_key, b/c we are replicating someone else's data
+//             err := successor.ListAppend(&trib.KeyValue{log_key, logEntry}, &succ)
+//             if err != nil || succ == false {
+//                 srcIndex = successorIndex
+//                 // this means the backend has either crashed or, for some reason, failed
+//                 continue
+//             }
+//         }
+//         // TODO: mark log key as 'complete'
+//         // mark the successor as true
+//         self.bitmap[srcIndex][successorIndex] = true
 
-        // TODO: logEntry format has not been finalized yet
-        // Once finalized, we need to insert into backends[i] data.
+//         // TODO: logEntry format has not been finalized yet
+//         // Once finalized, we need to insert into backends[i] data.
 
-        // since we have find a good machine to replicate data
-        break
-    }
-}
+//         // since we have find a good machine to replicate data
+//         break
+//     }
+// }
 
 func (self *Keeper) replicate(errorChan chan<- error) {
     ticker := time.NewTicker(1 * time.Second)
@@ -123,33 +123,36 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                     if err != nil {
                         // backend failure
                     }
-                    successorIndex = self.getSuccessor(index)
-                    successor = self.backends[successorIndex]
+                    successorIndex := self.getSuccessor(index)
+                    successor := self.backends[successorIndex]
                     err = successor.ListGet(log_key, successorLog)
                     if err != nil {
                         // successor failure
                     }
 
-                    for i := len(successorLog); i < len(backendLog); i+=1 {
+                    for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
                         var succ bool
                         // backend log, not self
-                        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + strconv.Itoa(index), backendLog[i]}, &succ)
+                        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(index), backendLog.L[i]}, &succ)
                         if err != nil || succ == false {
                             // successor failure
                         }
                         // execute
-                        var logEntry LogEntry
-                        err = json.UnMarshal([]byte(backendLog[i]), &logEntry)
+                        var logEntry *LogEntry
+                        logEntry, err = StringToLog(backendLog.L[i])
                         if err != nil {
                             // encoding failure
                         }
                         if logEntry.Opcode == "Set" {
-                            err = successor.Set(&logEntry.KV, &succ)
+                            err = successor.Set(&logEntry.Kv, &succ)
                         } else if logEntry.Opcode == "ListAppend" {
-                            err = successor.ListAppend(&logEntry.KV, &succ)
+                            err = successor.ListAppend(&logEntry.Kv, &succ)
                         } else if logEntry.Opcode == "ListRemove" {
                             var n int
-                            err = successor.ListRemove(&logEntry.KV, &n)
+                            err = successor.ListRemove(&logEntry.Kv, &n)
+                        }
+                        if err != nil {
+                            // succesor failure
                         }
                     }
                 }
@@ -161,14 +164,14 @@ func (self *Keeper) replicate(errorChan chan<- error) {
 func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     self.aliveBackends[crashBackend] = false
     logMap := self.bitmap[index]
-    for key := logMap {
+    for key := range logMap {
         // if backend(index) has backend(key) log information
         if logMap[key] == true {
 
         }
     }
     
-    go self.replicateLog()
+    // go self.replicateLog()
 }
 
 func (self *Keeper) join(newBackend trib.Storage) {

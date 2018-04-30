@@ -27,7 +27,8 @@ func (self *BinStorageProxy) Init() {
 
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
     self.Init()
-    hash := NewHash(name)
+    prefix := colon.Escape(name + "::")
+    hash := NewHash(prefix)
     num := hash % uint32(len(self.clients))
 
     //iterately to find available back-end
@@ -35,7 +36,11 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     for true {
       _, err := rpc.DialHTTP("tcp", self.backs[num])
       if err == nil {
-        bsc = &BinStorageClient{ prefix: colon.Escape(name + "::"), client: self.clients[num], num }
+        bsc = &BinStorageClient{ 
+                                prefix: prefix,
+                                client: self.clients[num], 
+                                id: num,
+                            }
         break
       }
       num = num + 1
