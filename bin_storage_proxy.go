@@ -16,7 +16,7 @@ var _ trib.BinStorage = new(BinStorageProxy)
 
 
 func (self *BinStorageProxy) Init() {
-    // create connections once per BinStorageProxy instance
+// create connections once per BinStorageProxy instance
     self.once.Do(func() {
         self.clients = []trib.Storage{}
         for _, addr := range self.backs {
@@ -33,20 +33,18 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
 
     //iterately to find available back-end
     var bsc trib.Storage
-    for true {
-      _, err := rpc.DialHTTP("tcp", self.backs[num])
-      if err == nil {
-        bsc = &BinStorageClient{ 
-                                prefix: prefix,
-                                client: self.clients[num], 
-                                id: num,
-                            }
-        break
-      }
-      num = num + 1
-      if num >= uint32(len(self.clients)) {
-        num = 0
-      }
+    for {
+        tmpClient, err := rpc.DialHTTP("tcp", self.backs[num])
+        if err == nil {
+            bsc = &BinStorageClient{ 
+                prefix: prefix,
+                client: self.clients[num], 
+            }
+            tmpClient.Close()
+            break
+        }
+        num += 1
+        num %= uint32(len(self.clients))
     }
     return bsc
 }

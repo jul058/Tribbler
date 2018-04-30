@@ -10,7 +10,6 @@ import (
 type BinStorageClient struct {
     prefix string
     client trib.Storage
-    id uint32     // hashed value
 }
 var _ trib.Storage = new(BinStorageClient)
 
@@ -49,7 +48,7 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
     }
 
     if logSucc == false {
-	    return fmt.Errorf("LOG Set failed.  id: %q", string(self.id))
+	    return fmt.Errorf("LOG Set failed")
     }
 
     return nil
@@ -95,7 +94,7 @@ func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
     }
 
     if logSucc == false {
-	    return fmt.Errorf("LOG ListAppend failed.  id: %q", string(self.id))
+	    return fmt.Errorf("LOG ListAppend failed")
     }
 
     return nil
@@ -120,7 +119,7 @@ func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
     }
 
     if logSucc == false {
-	    return fmt.Errorf("LOG ListRemove failed.  id: %q", string(self.id))
+	    return fmt.Errorf("LOG ListRemove failed")
     }
 
     return nil
