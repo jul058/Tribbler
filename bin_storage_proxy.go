@@ -35,12 +35,12 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     var bsc trib.Storage
     for {
         tmpClient, err := rpc.DialHTTP("tcp", self.backs[num])
+        tmpClient.Close()
         if err == nil {
             bsc = &BinStorageClient{ 
                 prefix: prefix,
                 client: self.clients[num], 
             }
-            tmpClient.Close()
             break
         }
         num += 1
