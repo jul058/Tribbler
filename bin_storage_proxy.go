@@ -16,7 +16,7 @@ var _ trib.BinStorage = new(BinStorageProxy)
 
 
 func (self *BinStorageProxy) Init() {
-// create connections once per BinStorageProxy instance
+    // create connections once per BinStorageProxy instance
     self.once.Do(func() {
         self.clients = []trib.Storage{}
         for _, addr := range self.backs {

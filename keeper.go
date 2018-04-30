@@ -19,10 +19,12 @@ type Keeper struct {
 }
 
 func (self *Keeper) Init() {
+    self.aliveBackends = make(map[trib.Storage] bool)
     for _, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
         self.aliveBackends[client] = true
+        // self.aliveBackends[client] = make(map[int] bool)
     }
 }
 
@@ -179,5 +181,5 @@ func (self *Keeper) join(newBackend trib.Storage) {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-    return srcIndex + 1
+    return (srcIndex + 1) % len(self.backends)
 }
