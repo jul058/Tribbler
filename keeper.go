@@ -172,7 +172,11 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     for key := range logMap {
         // if self has other backend's log
         if logMap[key] == true {
-            self.replicateLog(self.getSuccessor(index), index+1)
+            if key == index {
+                self.replicateLog(self.getSuccessor(index), index+1) 
+            } else {
+                self.replicateLog(key, index+1)
+            }
             // label self no longer has that log
             self.bitmap[index][key] = false
         }
@@ -191,6 +195,7 @@ func (self *Keeper) getSuccessor(srcIndex int) int {
             return index
         }
     }
-    // should not happen, this means data loss
-    return -1
+    // 1. no successor, potentially data loss.
+    // 2. first time, no replica for everyone. 
+    return srcIndex+1
 }
