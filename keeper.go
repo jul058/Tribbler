@@ -87,7 +87,7 @@ func (self *Keeper) StartKeeper() error {
 
 
 func (self *Keeper) replicateLog(replicatee, replicator int) {
-    if replicator == replicatee {
+    for replicator == replicatee {
         replicator += 1
         replicator %= len(self.backends)
     }
@@ -99,8 +99,6 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
         // self crashed
         self.crash(self.backends[replicatee], replicatee)
         return
-        // what to do next?
-        // maybe return?
     }
     successor := self.backends[replicator]
     err = successor.ListGet(log_key, successorLog)
@@ -186,13 +184,11 @@ func (self *Keeper) join(newBackend trib.Storage) {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-    logMap := self.bitmap[srcIndex]
-    for key := range logMap {
-        // alive, has data, and not self.
-        if self.aliveBackends[self.backends[key]] == true && 
-            logMap[key] == true && 
-            key != srcIndex {
-            return key
+    for index := range self.backends {
+        logMap := self.bitmap[index]
+        if logMap[srcIndex] == true &&
+        srcIndex != index {
+            return index
         }
     }
     // should not happen, this means data loss
