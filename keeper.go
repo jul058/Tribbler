@@ -20,11 +20,12 @@ type Keeper struct {
 
 func (self *Keeper) Init() {
     self.aliveBackends = make(map[trib.Storage] bool)
-    for _, addr := range self.kc.Backs {
+    self.bitmap = make(map[int] (map[int] bool))
+    for index, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
         self.aliveBackends[client] = true
-        // self.aliveBackends[client] = make(map[int] bool)
+        self.bitmap[index] = make(map[int] bool)
     }
 }
 
@@ -81,35 +82,67 @@ func (self *Keeper) StartKeeper() error {
     // boot up replication
     go self.replicate(errorChannel)
     // will return when errorChannel is unblocked
-    // return <- errorChannel
     return <-errorChannel
 }
 
-// func (self *Keeper) replicateLog(srcLog *trib.List, srcIndex int) {
-//     for {
-//         successorIndex := self.getSuccessor(srcIndex)
-//         successor := self.backends[successorIndex]
-//         var succ bool
-//         for _, logEntry := range srcLog.L {
-//             // shouldn't be log_key, b/c we are replicating someone else's data
-//             err := successor.ListAppend(&trib.KeyValue{log_key, logEntry}, &succ)
-//             if err != nil || succ == false {
-//                 srcIndex = successorIndex
-//                 // this means the backend has either crashed or, for some reason, failed
-//                 continue
-//             }
-//         }
-//         // TODO: mark log key as 'complete'
-//         // mark the successor as true
-//         self.bitmap[srcIndex][successorIndex] = true
 
-//         // TODO: logEntry format has not been finalized yet
-//         // Once finalized, we need to insert into backends[i] data.
+func (self *Keeper) replicateLog(replicatee, replicator int) {
+    backendLog := new(trib.List)
+    successorLog := new(trib.List)
+    backend := self.backends[replicatee]
+    err := backend.ListGet(log_key, backendLog)
+    if err != nil {
+        // self crashed
+        self.crash(self.backends[replicatee], replicatee)
+        return
+        // what to do next?
+        // maybe return?
+    }
+    successor := self.backends[replicator]
+    err = successor.ListGet(log_key, successorLog)
+    // until it finds a alive successor
+    for err != nil {
+        self.crash(successor, replicator)
+        replicator = self.getSuccessor(replicator)
+        successor = self.backends[replicator]
+        err = successor.ListGet(log_key, successorLog)
+    }
 
-//         // since we have find a good machine to replicate data
-//         break
-//     }
-// }
+    self.bitmap[replicator][replicatee] = true
+    for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
+        var succ bool
+        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(replicatee), backendLog.L[i]}, &succ)
+        if err != nil {
+            // successor failure
+            self.crash(successor, replicator)
+            // retry
+            self.replicateLog(replicatee, self.getSuccessor(replicatee))
+            return
+        }
+        // execute
+        var logEntry *LogEntry
+        logEntry, err = StringToLog(backendLog.L[i])
+        if err != nil {
+            // encoding failure
+        }
+        if logEntry.Opcode == "Set" {
+            err = successor.Set(&logEntry.Kv, &succ)
+        } else if logEntry.Opcode == "ListAppend" {
+            err = successor.ListAppend(&logEntry.Kv, &succ)
+        } else if logEntry.Opcode == "ListRemove" {
+            var n int
+            err = successor.ListRemove(&logEntry.Kv, &n)
+        }
+        if err != nil {
+            // successor failure
+            self.crash(successor, replicator)
+            // retry
+            self.replicateLog(replicatee, self.getSuccessor(replicatee))
+            return
+        }
+    }
+}
+
 
 func (self *Keeper) replicate(errorChan chan<- error) {
     ticker := time.NewTicker(1 * time.Second)
@@ -118,45 +151,8 @@ func (self *Keeper) replicate(errorChan chan<- error) {
             case <- ticker.C:
                 // self.aliveBackendsLock.Lock()
                 // for backend := range self.aliveBackends {
-                for index, backend := range self.backends {
-                    backendLog := new(trib.List)
-                    successorLog := new(trib.List)
-                    err := backend.ListGet(log_key, backendLog)
-                    if err != nil {
-                        // backend failure
-                    }
-                    successorIndex := self.getSuccessor(index)
-                    successor := self.backends[successorIndex]
-                    err = successor.ListGet(log_key, successorLog)
-                    if err != nil {
-                        // successor failure
-                    }
-
-                    for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
-                        var succ bool
-                        // backend log, not self
-                        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(index), backendLog.L[i]}, &succ)
-                        if err != nil || succ == false {
-                            // successor failure
-                        }
-                        // execute
-                        var logEntry *LogEntry
-                        logEntry, err = StringToLog(backendLog.L[i])
-                        if err != nil {
-                            // encoding failure
-                        }
-                        if logEntry.Opcode == "Set" {
-                            err = successor.Set(&logEntry.Kv, &succ)
-                        } else if logEntry.Opcode == "ListAppend" {
-                            err = successor.ListAppend(&logEntry.Kv, &succ)
-                        } else if logEntry.Opcode == "ListRemove" {
-                            var n int
-                            err = successor.ListRemove(&logEntry.Kv, &n)
-                        }
-                        if err != nil {
-                            // succesor failure
-                        }
-                    }
+                for index := range self.backends {
+                    self.replicateLog(index, self.getSuccessor(index))
                 }
                 // self.aliveBackendsLock.Unlock()
         }
@@ -166,14 +162,22 @@ func (self *Keeper) replicate(errorChan chan<- error) {
 func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     self.aliveBackends[crashBackend] = false
     logMap := self.bitmap[index]
-    for key := range logMap {
-        // if backend(index) has backend(key) log information
-        if logMap[key] == true {
 
+    for key := range logMap {
+        // if self has other backend's log
+        if logMap[key] == true {
+            // self log
+            if key == index {
+                // replicate log on self+2
+                self.replicateLog(self.getSuccessor(index), index+2)
+            } else {
+                // replicate log on self+1
+                self.replicateLog(self.getSuccessor(index), index+1)
+            }
+            // label self no longer has that log
+            self.bitmap[index][key] = false
         }
     }
-    
-    // go self.replicateLog()
 }
 
 func (self *Keeper) join(newBackend trib.Storage) {
@@ -181,5 +185,15 @@ func (self *Keeper) join(newBackend trib.Storage) {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-    return (srcIndex + 1) % len(self.backends)
+    logMap := self.bitmap[srcIndex]
+    for key := range logMap {
+        // alive, has data, and not self.
+        if self.aliveBackends[self.backends[key]] == true && 
+            logMap[key] == true && 
+            key != srcIndex {
+            return key
+        }
+    }
+    // should not happen, this means data loss
+    return -1
 }
