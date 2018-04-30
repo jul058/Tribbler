@@ -34,7 +34,6 @@ func (self *Keeper) StartKeeper() error {
     if self.kc.Ready != nil {
         self.kc.Ready <- true
     }
-    
     ticker := time.NewTicker(1 * time.Second)
     errorChannel := make(chan error)
     synClockChannel := make(chan uint64)
@@ -60,7 +59,7 @@ func (self *Keeper) StartKeeper() error {
                             } else {
                                 aliveNum += 1
                                 if self.aliveBackends[backend] == false {
-                                    go self.join(backend)
+                                    go self.join(backend, index)
                                 }
                             }
                             synClockChannel <- ret
@@ -183,8 +182,23 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     }
 }
 
-func (self *Keeper) join(newBackend trib.Storage) {
+func (self *Keeper) join(newBackend trib.Storage, index int) {
+    //copy data belongs to this backend back to itself
+    for backupIndex := (index - 1) % len(self.bitmap);
+	backupIndex != index;
+	backupIndex= ((backupIndex - 1) % len(self.bitmap)) {
+      if self.bitmap[backupIndex][index] == true {
+        self.replicateLog(backupIndex, index)
+        //stop this replicate
+        self.bitmap[backupIndex][index] = false
+        break
+      }
+    }
     self.aliveBackends[newBackend] = true
+    //set the new backup back-end for newBackend
+    //go replicate(index, getSuccessor(index))
+
+    //set the newBackend to be backup back-end for previous alive back-end
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
