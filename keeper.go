@@ -87,6 +87,10 @@ func (self *Keeper) StartKeeper() error {
 
 
 func (self *Keeper) replicateLog(replicatee, replicator int) {
+    if replicator == replicatee {
+        replicator += 1
+        replicator %= len(self.backends)
+    }
     backendLog := new(trib.List)
     successorLog := new(trib.List)
     backend := self.backends[replicatee]
@@ -103,7 +107,9 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
     // until it finds a alive successor
     for err != nil {
         self.crash(successor, replicator)
-        replicator = self.getSuccessor(replicator)
+        // this successor has failed, try next one.
+        replicator += 1
+        replicator %= len(self.backends)
         successor = self.backends[replicator]
         err = successor.ListGet(log_key, successorLog)
     }
@@ -168,14 +174,7 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     for key := range logMap {
         // if self has other backend's log
         if logMap[key] == true {
-            // self log
-            if key == index {
-                // replicate log on self+2
-                self.replicateLog(self.getSuccessor(index), self.getSuccessor(index)+1)
-            } else {
-                // replicate log on self+1
-                self.replicateLog(self.getSuccessor(index), self.getSuccessor(index)+1)
-            }
+            self.replicateLog(self.getSuccessor(index), index+1)
             // label self no longer has that log
             self.bitmap[index][key] = false
         }
