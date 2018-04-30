@@ -9,6 +9,8 @@ import (
 type BinStorageClient struct {
     prefix string
     client trib.Storage
+    id int
+    total int
 }
 var _ trib.Storage = new(BinStorageClient)
 
@@ -30,6 +32,10 @@ func (self *BinStorageClient) Get(key string, value *string) error {
 
 func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
     myKv := &trib.KeyValue{ self.prefix + colon.Escape(kv.Key), colon.Escape(kv.Value) }
+    if NewHash(self.prefix) % self.total == self.id {
+        //log
+    }
+
     return self.client.Set(myKv, succ)
 }
 

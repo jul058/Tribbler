@@ -26,6 +26,11 @@ func (self *BinStorageProxy) Init() {
 
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
     self.Init()
-    hash := NewHash(name)
-    return &BinStorageClient{ prefix: colon.Escape(name + "::"), client: self.clients[hash % uint32(len(self.clients))] }
+    hash := NewHash(name + "::")
+    return &BinStorageClient{ 
+                            prefix: colon.Escape(name + "::"), 
+                            client: self.clients[hash % uint32(len(self.clients))],
+                            id:  hash % uint32(len(self.clients)),
+                            total: len(self.clients)
+                        }
 }
