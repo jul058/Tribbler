@@ -35,7 +35,7 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     for true {
       _, err := rpc.DialHTTP("tcp", self.backs[num])
       if err == nil {
-        bsc = &BinStorageClient{ prefix: colon.Escape(name + "::"), client: self.clients[num]}
+        bsc = &BinStorageClient{ prefix: colon.Escape(name + "::"), client: self.clients[num], num }
         break
       }
       num = num + 1
