@@ -193,7 +193,6 @@ func (self *Keeper) join(newBackend trib.Storage, index int) {
     //go replicate(index, getSuccessor(index))
 
     //set the newBackend to be backup back-end for previous alive back-end
-}
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
     for index := range self.backends {
