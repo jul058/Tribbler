@@ -108,6 +108,8 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
         err = successor.ListGet(log_key, successorLog)
     }
 
+
+    // successor has self log
     self.bitmap[replicator][replicatee] = true
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
         var succ bool
@@ -169,10 +171,10 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
             // self log
             if key == index {
                 // replicate log on self+2
-                self.replicateLog(self.getSuccessor(index), index+2)
+                self.replicateLog(self.getSuccessor(index), self.getSuccessor(index)+1)
             } else {
                 // replicate log on self+1
-                self.replicateLog(self.getSuccessor(index), index+1)
+                self.replicateLog(self.getSuccessor(index), self.getSuccessor(index)+1)
             }
             // label self no longer has that log
             self.bitmap[index][key] = false
