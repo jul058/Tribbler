@@ -42,22 +42,19 @@ func (self *Keeper) StartKeeper() error {
         var ret uint64
         synClock := uint64(0)
         for range time.Tick(1 * time.Second) {
-            aliveNum := 0
-            for index, _ := range self.backends {
+            for index := range self.backends {
                 go func(i int) {
                     err := self.backends[i].Clock(synClock, &ret)
-                    //fmt.Println("index boolan", i, self.aliveBackends[i])
                     if err != nil {
                         // heartbeat fails
                         if self.aliveBackends[i] == true {
-                            //fmt.Println("about to crash, ", index)
+                            fmt.Println("about to crash, ", i)
                             self.crash(i)
                         }
                         synClockChannel <- 0
                     } else {
-                        aliveNum += 1
                         if self.aliveBackends[i] == false {
-                            //fmt.Println("about to join")
+                            fmt.Println("about to join, ", i)
                             self.join(i)
                         }
                         synClockChannel <- ret
@@ -83,7 +80,8 @@ func (self *Keeper) StartKeeper() error {
 func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     replicator = replicator % len(self.bitmap)
     replicatee = replicatee % len(self.bitmap)
-    for replicator == replicatee {
+    //if use for, will cause infinite loop when only one alive back-end
+    if replicator == replicatee {
         replicator += 1
         replicator %= len(self.backends)
     }
@@ -169,10 +167,10 @@ func (self *Keeper) crash(index int) {
         if logMap[key] == true {
             if key == index {
                 //fmt.Println("copy D to B")
-                self.replicateLog(self.getSuccessor(index), index+1, self.getSuccessor(index))
+                self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
             } else {
                 //fmt.Println("copy C to A")
-                self.replicateLog(key, index+1, key)
+                self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
             }
             // label self no longer has that log
             self.bitmap[index][key] = false
@@ -186,19 +184,30 @@ func (self *Keeper) join(index int) {
     //copy data belongs to this backend back to itself
     self.bitmapLock.Lock()
     defer self.bitmapLock.Unlock()
-    for backupIndex := (index - 1) % len(self.bitmap);
-	backupIndex != index;
-	backupIndex= ((backupIndex - 1) % len(self.bitmap)) {
-      if self.bitmap[backupIndex][index] == true {
-        self.replicateLog(backupIndex, index, index)
-        //stop this replicate
-        self.bitmap[backupIndex][index] = false
-        break
-      }
+    for backupIndex := (index-1+len(self.bitmap))%len(self.bitmap); 
+        backupIndex != index; 
+        backupIndex = (backupIndex-1+len(self.bitmap))%len(self.bitmap) {
+        if self.bitmap[backupIndex][index] == true {
+            fmt.Println("replicatee: %d replicator: %d ", backupIndex, index)
+            self.replicateLog(backupIndex, index, index)
+            //stop this replicate
+            self.bitmap[backupIndex][index] = false
+            break
+        }
     }
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
+    for index:= srcIndex + 1; index != srcIndex; index+=1 {
+      if index > len(self.aliveBackends) - 1 {
+        index = 0
+      }
+      if self.aliveBackends[index] == true {
+        return index
+      }
+    }
+    return srcIndex
+    /*
     for index := range self.backends {
         logMap := self.bitmap[index]
         if logMap[srcIndex] == true &&
@@ -210,4 +219,18 @@ func (self *Keeper) getSuccessor(srcIndex int) int {
     // 1. no successor, potentially data loss.
     // 2. first time, no replica for everyone. 
     return srcIndex+1
+    */
 }
+
+func (self *Keeper) getPredecessor(srcIndex int) int {
+  for index:=srcIndex - 1; index != srcIndex; index-=1 {
+    if index < 0 {
+      index = len(self.aliveBackends)-1
+    }
+    if self.aliveBackends[index] == true {
+      return index
+    }
+  }
+  return srcIndex
+}
+

@@ -5,6 +5,7 @@ import (
     "trib"
     "trib/colon"
     "net/rpc"
+    "fmt"
 )
 
 type BinStorageProxy struct {
@@ -36,7 +37,9 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     for {
         tmpClient, err := rpc.DialHTTP("tcp", self.backs[index])
         if err == nil {
-            // fmt.Errorf("num: %d\n", num)
+            fmt.Printf("original: %d", originIndex)
+            fmt.Printf(", current: %d", index)
+            fmt.Println()
             tmpClient.Close()
             bsc = &BinStorageClient{
                 originIndex: int(originIndex),
