@@ -5,7 +5,6 @@ import (
     "trib"
     "trib/colon"
     "net/rpc"
-    "fmt"
 )
 
 type BinStorageProxy struct {
@@ -30,24 +29,24 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     self.Init()
     prefix := colon.Escape(name + "::")
     hash := NewHash(prefix)
-    num := hash % uint32(len(self.clients))
+    originIndex := hash % uint32(len(self.clients))
+    index := originIndex
     //iterately to find available back-end
     var bsc trib.Storage
     for {
-        tmpClient, err := rpc.DialHTTP("tcp", self.backs[num])
+        tmpClient, err := rpc.DialHTTP("tcp", self.backs[index])
         if err == nil {
             // fmt.Errorf("num: %d\n", num)
-            fmt.Println("num: ", num)
             tmpClient.Close()
-            bsc = &BinStorageClient{ 
-                index: num,
+            bsc = &BinStorageClient{
+                originIndex: int(originIndex),
                 prefix: prefix,
-                client: self.clients[num], 
+                client: self.clients[index],
             }
             break
         }
-        num += 1
-        num %= uint32(len(self.clients))
+        index += 1
+        index %= uint32(len(self.clients))
     }
     return bsc
 }

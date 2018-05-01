@@ -5,11 +5,10 @@ import (
     "strings"
     "trib"
     "trib/colon"
-    "strconv"
 )
 
 type BinStorageClient struct {
-    index uint32
+    originIndex int
     prefix string
     client trib.Storage
 }
@@ -44,7 +43,7 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
     }
 
     var logSucc bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key+strconv.FormatUint(uint64(self.index), 10), log}, &logSucc)
+    err = self.client.ListAppend(&trib.KeyValue{log_key + "_" + string(self.originIndex), log}, &logSucc)
     if err != nil {
         return err
     }
@@ -90,7 +89,7 @@ func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
 	    return e
     }
     var logSucc bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key, log}, &logSucc)
+    err = self.client.ListAppend(&trib.KeyValue{log_key + "_" + string(self.originIndex), log}, &logSucc)
     if err != nil {
         return err
     }
@@ -115,7 +114,7 @@ func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
     }
 
     var logSucc bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key, log}, &logSucc)
+    err = self.client.ListAppend(&trib.KeyValue{log_key + "_"  + string(self.originIndex), log}, &logSucc)
     if err != nil {
         return err 
     }

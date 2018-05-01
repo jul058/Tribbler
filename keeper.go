@@ -6,7 +6,6 @@ import (
     "time"
     "trib"
     "fmt"
-    "strconv"
 )
 
 const log_key = "LOG_KEY"
@@ -91,21 +90,21 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
     backendLog := new(trib.List)
     successorLog := new(trib.List)
     backend := self.backends[replicatee]
-    err := backend.ListGet(log_key+strconv.Itoa(replicatee), backendLog)
+    err := backend.ListGet(log_key + "_" + string(replicatee), backendLog)
     if err != nil {
         // self crashed
         return
     }
 
     successor := self.backends[replicator]
-    err = successor.ListGet(log_key+"_"+string(replicatee), successorLog)
+    err = successor.ListGet(log_key + "_" + string(replicatee), successorLog)
     // until it finds a alive successor
     for err != nil {
         // this successor has failed, try next one.
         replicator += 1
         replicator %= len(self.backends)
         successor = self.backends[replicator]
-        err = successor.ListGet(log_key+strconv.Itoa(replicatee), successorLog)
+        err = successor.ListGet(log_key + "_" + string(replicatee), successorLog)
     }
 
 
