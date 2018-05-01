@@ -18,6 +18,7 @@ type Keeper struct {
     bitmap map[int] (map[int] bool)
 
     aliveBackendsLock sync.Mutex
+    bitmapLock sync.Mutex
 }
 
 func (self *Keeper) Init() {
@@ -93,15 +94,13 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
     err := backend.ListGet(log_key+strconv.Itoa(replicatee), backendLog)
     if err != nil {
         // self crashed
-        // self.crash(self.backends[replicatee], replicatee)
         return
     }
 
     successor := self.backends[replicator]
-    err = successor.ListGet(log_key+strconv.Itoa(replicatee), successorLog)
+    err = successor.ListGet(log_key+"_"+string(replicatee), successorLog)
     // until it finds a alive successor
     for err != nil {
-        // self.crash(successor, replicator)
         // this successor has failed, try next one.
         replicator += 1
         replicator %= len(self.backends)
@@ -111,14 +110,14 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
 
 
     // successor has self log
+    fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
+    fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
     self.bitmap[replicator][replicatee] = true
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
         var succ bool
         err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(replicatee), backendLog.L[i]}, &succ)
         if err != nil {
             // successor failure
-            // self.crash(successor, replicator)
-            // retry
             self.replicateLog(replicatee, self.getSuccessor(replicatee))
             return
         }
@@ -138,8 +137,6 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
         }
         if err != nil {
             // successor failure
-            // self.crash(successor, replicator)
-            // retry
             self.replicateLog(replicatee, self.getSuccessor(replicatee))
             return
         }
@@ -148,19 +145,14 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
 
 
 func (self *Keeper) replicate(errorChan chan<- error) {
-    ticker := time.NewTicker(1 * time.Second)
-    for {
-        select {
-            case <- ticker.C:
-                // self.aliveBackendsLock.Lock()
-                for index, val := range self.aliveBackends {
-                // for index := range self.backends {
-                    if val == true {
-                        self.bitmap[index][index] = true
-                        self.replicateLog(index, self.getSuccessor(index))
-                    }
-                }
-                // self.aliveBackendsLock.Unlock()
+    for range time.Tick(1 * time.Second) {
+        for index, val := range self.aliveBackends {
+            if val == true {
+                self.bitmapLock.Lock()
+                self.bitmap[index][index] = true
+                self.bitmapLock.Unlock()
+                self.replicateLog(index, self.getSuccessor(index))
+            }
         }
     }
 }
@@ -168,6 +160,8 @@ func (self *Keeper) replicate(errorChan chan<- error) {
 func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     fmt.Println("enter crash")
     self.aliveBackends[index] = false
+    self.bitmapLock.Lock()
+    defer self.bitmapLock.Unlock()
     logMap := self.bitmap[index]
 
     for key := range logMap {
@@ -187,7 +181,10 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
 }
 
 func (self *Keeper) join(newBackend trib.Storage, index int) {
+    self.aliveBackends[index] = true
     //copy data belongs to this backend back to itself
+    self.bitmapLock.Lock()
+    defer self.bitmapLock.Unlock()
     for backupIndex := (index - 1) % len(self.bitmap);
 	backupIndex != index;
 	backupIndex= ((backupIndex - 1) % len(self.bitmap)) {
@@ -198,11 +195,6 @@ func (self *Keeper) join(newBackend trib.Storage, index int) {
         break
       }
     }
-    self.aliveBackends[index] = true
-    //set the new backup back-end for newBackend
-    //go replicate(index, getSuccessor(index))
-
-    //set the newBackend to be backup back-end for previous alive back-end
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {

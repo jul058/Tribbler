@@ -31,12 +31,13 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     prefix := colon.Escape(name + "::")
     hash := NewHash(prefix)
     num := hash % uint32(len(self.clients))
-    fmt.Errorf("num: %d\n", num)
     //iterately to find available back-end
     var bsc trib.Storage
     for {
         tmpClient, err := rpc.DialHTTP("tcp", self.backs[num])
         if err == nil {
+            // fmt.Errorf("num: %d\n", num)
+            fmt.Println("num: ", num)
             tmpClient.Close()
             bsc = &BinStorageClient{ 
                 index: num,
