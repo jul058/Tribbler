@@ -24,7 +24,6 @@ func (self *Keeper) Init() {
     self.aliveBackends = make(map[int] bool)
     self.bitmap = make(map[int] (map[int] bool))
     for index, addr := range self.kc.Backs {
-        fmt.Println("address: ", index)
         client := NewClient(addr)
         self.backends = append(self.backends, client)
         self.aliveBackends[index] = true
@@ -43,26 +42,24 @@ func (self *Keeper) StartKeeper() error {
         var ret uint64
         synClock := uint64(0)
         for range time.Tick(1 * time.Second) {
-            aliveNum := 0
-            for index, backend := range self.backends {
-                go func() {
-                    err := backend.Clock(synClock, &ret)
+            for index := range self.backends {
+                go func(i int) {
+                    err := self.backends[i].Clock(synClock, &ret)
                     if err != nil {
                         // heartbeat fails
-                        if self.aliveBackends[index] == true {
-                            fmt.Println("about to crash, ", index)
-                            self.crash(backend, index)
+                        if self.aliveBackends[i] == true {
+                            fmt.Println("about to crash, ", i)
+                            self.crash(i)
                         }
                         synClockChannel <- 0
                     } else {
-                        aliveNum += 1
-                        if self.aliveBackends[index] == false {
-                            fmt.Println("about to join")
-                            self.join(backend, index)
+                        if self.aliveBackends[i] == false {
+                            fmt.Println("about to join, ", i)
+                            self.join(i)
                         }
                         synClockChannel <- ret
                     }
-                }()
+                }(index)
             }
             for i := 0; i < len(self.backends); i+=1 {
                 if clock := <- synClockChannel; clock > synClock {
@@ -80,7 +77,7 @@ func (self *Keeper) StartKeeper() error {
 }
 
 
-func (self *Keeper) replicateLog(replicatee, replicator int) {
+func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     replicator = replicator % len(self.bitmap)
     replicatee = replicatee % len(self.bitmap)
     for replicator == replicatee {
@@ -90,34 +87,35 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
     backendLog := new(trib.List)
     successorLog := new(trib.List)
     backend := self.backends[replicatee]
-    err := backend.ListGet(log_key + "_" + string(replicatee), backendLog)
+    err := backend.ListGet(log_key + "_" + string(src), backendLog)
     if err != nil {
         // self crashed
         return
     }
 
     successor := self.backends[replicator]
-    err = successor.ListGet(log_key + "_" + string(replicatee), successorLog)
+    err = successor.ListGet(log_key + "_" + string(src), successorLog)
     // until it finds a alive successor
     for err != nil {
         // this successor has failed, try next one.
         replicator += 1
         replicator %= len(self.backends)
         successor = self.backends[replicator]
-        err = successor.ListGet(log_key + "_" + string(replicatee), successorLog)
+        err = successor.ListGet(log_key + "_" + string(src), successorLog)
     }
 
 
     // successor has self log
-    fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
-    fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
+    //fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
+    //fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
     self.bitmap[replicator][replicatee] = true
+    // fmt.Printf("bitmap: %s\n", self.bitmap)
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
         var succ bool
-        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(replicatee), backendLog.L[i]}, &succ)
+        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(src), backendLog.L[i]}, &succ)
         if err != nil {
             // successor failure
-            self.replicateLog(replicatee, self.getSuccessor(replicatee))
+            self.replicateLog(replicatee, self.getSuccessor(replicatee), src)
             return
         }
         // execute
@@ -136,7 +134,7 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
         }
         if err != nil {
             // successor failure
-            self.replicateLog(replicatee, self.getSuccessor(replicatee))
+            self.replicateLog(replicatee, self.getSuccessor(replicatee), src)
             return
         }
     }
@@ -150,14 +148,14 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                 self.bitmapLock.Lock()
                 self.bitmap[index][index] = true
                 self.bitmapLock.Unlock()
-                self.replicateLog(index, self.getSuccessor(index))
+                self.replicateLog(index, self.getSuccessor(index), index)
             }
         }
     }
 }
 
-func (self *Keeper) crash(crashBackend trib.Storage, index int) {
-    fmt.Println("enter crash")
+func (self *Keeper) crash(index int) {
+    //fmt.Println("enter crash")
     self.aliveBackends[index] = false
     self.bitmapLock.Lock()
     defer self.bitmapLock.Unlock()
@@ -167,11 +165,11 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
         // if self has other backend's log
         if logMap[key] == true {
             if key == index {
-                fmt.Println("copy D to B")
-                self.replicateLog(self.getSuccessor(index), index+1) 
+                //fmt.Println("copy D to B")
+                self.replicateLog(self.getSuccessor(index), index+1, self.getSuccessor(index))
             } else {
-                fmt.Println("copy C to A")
-                self.replicateLog(key, index+1)
+                //fmt.Println("copy C to A")
+                self.replicateLog(key, index+1, key)
             }
             // label self no longer has that log
             self.bitmap[index][key] = false
@@ -179,16 +177,19 @@ func (self *Keeper) crash(crashBackend trib.Storage, index int) {
     }
 }
 
-func (self *Keeper) join(newBackend trib.Storage, index int) {
+func (self *Keeper) join(index int) {
+    fmt.Println("Enter join")
     self.aliveBackends[index] = true
     //copy data belongs to this backend back to itself
     self.bitmapLock.Lock()
     defer self.bitmapLock.Unlock()
-    for backupIndex := (index - 1) % len(self.bitmap);
-	backupIndex != index;
-	backupIndex = ((backupIndex - 1) % len(self.bitmap)) {
+    for backupIndex := (index-1+len(self.bitmap))%len(self.bitmap); 
+        backupIndex != index; 
+        backupIndex = (backupIndex-1+len(self.bitmap))%len(self.bitmap) {
+        fmt.Printf("enter for loop, backupIndex: %d, index: %d\n", backupIndex, index)
         if self.bitmap[backupIndex][index] == true {
-            self.replicateLog(backupIndex, index)
+            fmt.Println("replicatee: %d replicator: %d ", backupIndex, index)
+            self.replicateLog(backupIndex, index, index)
             //stop this replicate
             self.bitmap[backupIndex][index] = false
             break
@@ -201,7 +202,7 @@ func (self *Keeper) getSuccessor(srcIndex int) int {
         logMap := self.bitmap[index]
         if logMap[srcIndex] == true &&
         srcIndex != index {
-            fmt.Println("src and successor", srcIndex, index)
+            //fmt.Println("src and successor", srcIndex, index)
             return index
         }
     }
