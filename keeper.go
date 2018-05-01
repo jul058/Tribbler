@@ -1,7 +1,6 @@
 package triblab
 
 import (
-    // "encoding/json"
     "sync"
     "time"
     "trib"
@@ -80,7 +79,8 @@ func (self *Keeper) StartKeeper() error {
 func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     replicator = replicator % len(self.bitmap)
     replicatee = replicatee % len(self.bitmap)
-    for replicator == replicatee {
+    //if use for, will cause infinite loop when only one alive back-end
+    if replicator == replicatee {
         replicator += 1
         replicator %= len(self.backends)
     }
@@ -108,8 +108,8 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     // successor has self log
     //fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
     //fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
-    self.bitmap[replicator][replicatee] = true
-    // fmt.Printf("bitmap: %s\n", self.bitmap)
+    self.bitmap[replicator][src] = true
+    //fmt.Println("set true: [%d][%d]",replicator, src)
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
         var succ bool
         err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(src), backendLog.L[i]}, &succ)
@@ -147,8 +147,17 @@ func (self *Keeper) replicate(errorChan chan<- error) {
             if val == true {
                 self.bitmapLock.Lock()
                 self.bitmap[index][index] = true
-                self.bitmapLock.Unlock()
+                // self.bitmapLock.Unlock()
+                // relicate self
                 self.replicateLog(index, self.getSuccessor(index), index)
+                // needs to check whether this backend is hosting other backend's log and that backend is dead. 
+                // if so, then it needs to propogate the log to its successor. 
+                for key, val := range self.bitmap[index] {
+                    if val == true && self.aliveBackends[key] == false {
+                        self.replicateLog(index, self.getSuccessor(index), key)
+                    }
+                }
+                self.bitmapLock.Unlock()
             }
         }
     }
@@ -165,11 +174,9 @@ func (self *Keeper) crash(index int) {
         // if self has other backend's log
         if logMap[key] == true {
             if key == index {
-                //fmt.Println("copy D to B")
-                self.replicateLog(self.getSuccessor(index), index+1, index)
+                self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
             } else {
-                //fmt.Println("copy C to A")
-                self.replicateLog(key, index+1, key)
+                self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
             }
             // label self no longer has that log
             self.bitmap[index][key] = false
@@ -186,7 +193,6 @@ func (self *Keeper) join(index int) {
     for backupIndex := (index-1+len(self.bitmap))%len(self.bitmap); 
         backupIndex != index; 
         backupIndex = (backupIndex-1+len(self.bitmap))%len(self.bitmap) {
-        fmt.Printf("enter for loop, backupIndex: %d, index: %d\n", backupIndex, index)
         if self.bitmap[backupIndex][index] == true {
             fmt.Println("replicatee: %d replicator: %d ", backupIndex, index)
             self.replicateLog(backupIndex, index, index)
@@ -198,15 +204,23 @@ func (self *Keeper) join(index int) {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-    for index := range self.backends {
-        logMap := self.bitmap[index]
-        if logMap[srcIndex] == true &&
-        srcIndex != index {
-            //fmt.Println("src and successor", srcIndex, index)
+    for index := (srcIndex+1)%len(self.bitmap);
+        index != srcIndex;
+        index = (index+1)%len(self.bitmap) {
+        if self.aliveBackends[index] == true {
             return index
         }
     }
-    // 1. no successor, potentially data loss.
-    // 2. first time, no replica for everyone. 
-    return srcIndex+1
+    return (srcIndex+1)%len(self.bitmap)
+}
+
+func (self *Keeper) getPredecessor(srcIndex int) int {
+    for index := (srcIndex-1+len(self.bitmap))%len(self.bitmap);
+        index != srcIndex;
+        index = (index-1+len(self.bitmap))%len(self.bitmap) {
+        if self.aliveBackends[index] == true {
+            return index
+        }
+    }
+    return (srcIndex-1)%len(self.bitmap)
 }
