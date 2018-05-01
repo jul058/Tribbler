@@ -186,13 +186,13 @@ func (self *Keeper) join(newBackend trib.Storage, index int) {
     defer self.bitmapLock.Unlock()
     for backupIndex := (index - 1) % len(self.bitmap);
 	backupIndex != index;
-	backupIndex= ((backupIndex - 1) % len(self.bitmap)) {
-      if self.bitmap[backupIndex][index] == true {
-        self.replicateLog(backupIndex, index)
-        //stop this replicate
-        self.bitmap[backupIndex][index] = false
-        break
-      }
+	backupIndex = ((backupIndex - 1) % len(self.bitmap)) {
+        if self.bitmap[backupIndex][index] == true {
+            self.replicateLog(backupIndex, index)
+            //stop this replicate
+            self.bitmap[backupIndex][index] = false
+            break
+        }
     }
 }
 
