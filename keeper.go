@@ -36,48 +36,39 @@ func (self *Keeper) StartKeeper() error {
     if self.kc.Ready != nil {
         self.kc.Ready <- true
     }
-    ticker := time.NewTicker(1 * time.Second)
     errorChannel := make(chan error)
     synClockChannel := make(chan uint64)
     go func() {
         var ret uint64
         synClock := uint64(0)
-        for {
+        for range time.Tick(1 * time.Second) {
             aliveNum := 0
-            select {
-                // https://stackoverflow.com/questions/16466320/is-there-a-way-to-do-repetitive-tasks-at-intervals-in-golang
-                // this is better. Somehow equivalent to setInterval in js
-                // time.Sleep will have timeskew eventually
-                case <- ticker.C: 
-                    for index, backend := range self.backends {
-                        go func() {
-                            err := backend.Clock(synClock, &ret)
-                            if err != nil {
-                                // heartbeat fails
-                                if self.aliveBackends[index] == true {
-                                    fmt.Println("about to crash, ", index)
-                                    self.crash(backend, index)
-                                }
-                            } else {
-                                aliveNum += 1
-                                if self.aliveBackends[index] == false {
-                                    fmt.Println("about to join")
-                                    self.join(backend, index)
-                                }
-                            }
-                            synClockChannel <- ret
-                        }()
-                    }
-                    for i := 0; i < aliveNum; i+=1 {
-                        if clock := <- synClockChannel; clock > synClock {
-                            synClock = clock
+            for index, backend := range self.backends {
+                go func() {
+                    err := backend.Clock(synClock, &ret)
+                    if err != nil {
+                        // heartbeat fails
+                        if self.aliveBackends[index] == true {
+                            fmt.Println("about to crash, ", index)
+                            self.crash(backend, index)
                         }
+                        synClockChannel <- 0
+                    } else {
+                        aliveNum += 1
+                        if self.aliveBackends[index] == false {
+                            fmt.Println("about to join")
+                            self.join(backend, index)
+                        }
+                        synClockChannel <- ret
                     }
-                    // clock synchorizes within 2-3 seconds(depending on how you count)
-                    // one back-end trivially satisfies sync
-                    // two and above inducutively satisfy sync
-                    synClock += 1
+                }()
             }
+            for i := 0; i < len(self.backends); i+=1 {
+                if clock := <- synClockChannel; clock > synClock {
+                    synClock = clock
+                }
+            }
+            synClock += 1
         }
     }()
 
@@ -104,6 +95,7 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
         // self.crash(self.backends[replicatee], replicatee)
         return
     }
+
     successor := self.backends[replicator]
     err = successor.ListGet(log_key, successorLog)
     // until it finds a alive successor
@@ -160,9 +152,12 @@ func (self *Keeper) replicate(errorChan chan<- error) {
         select {
             case <- ticker.C:
                 // self.aliveBackendsLock.Lock()
-                for index := range self.aliveBackends {
+                for index, val := range self.aliveBackends {
                 // for index := range self.backends {
-                    self.replicateLog(index, self.getSuccessor(index))
+                    if val == true {
+                        self.bitmap[index][index] = true
+                        self.replicateLog(index, self.getSuccessor(index))
+                    }
                 }
                 // self.aliveBackendsLock.Unlock()
         }
