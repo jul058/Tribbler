@@ -166,7 +166,7 @@ func (self *Keeper) crash(index int) {
         if logMap[key] == true {
             if key == index {
                 //fmt.Println("copy D to B")
-                self.replicateLog(self.getSuccessor(index), index+1, self.getSuccessor(index))
+                self.replicateLog(self.getSuccessor(index), index+1, index)
             } else {
                 //fmt.Println("copy C to A")
                 self.replicateLog(key, index+1, key)
