@@ -6,6 +6,7 @@ import (
     "time"
     "trib"
     "fmt"
+    "strconv"
 )
 
 const log_key = "LOG_KEY"
@@ -89,7 +90,7 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
     backendLog := new(trib.List)
     successorLog := new(trib.List)
     backend := self.backends[replicatee]
-    err := backend.ListGet(log_key, backendLog)
+    err := backend.ListGet(log_key+strconv.Itoa(replicatee), backendLog)
     if err != nil {
         // self crashed
         // self.crash(self.backends[replicatee], replicatee)
@@ -97,7 +98,7 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
     }
 
     successor := self.backends[replicator]
-    err = successor.ListGet(log_key, successorLog)
+    err = successor.ListGet(log_key+strconv.Itoa(replicatee), successorLog)
     // until it finds a alive successor
     for err != nil {
         // self.crash(successor, replicator)
@@ -105,7 +106,7 @@ func (self *Keeper) replicateLog(replicatee, replicator int) {
         replicator += 1
         replicator %= len(self.backends)
         successor = self.backends[replicator]
-        err = successor.ListGet(log_key, successorLog)
+        err = successor.ListGet(log_key+strconv.Itoa(replicatee), successorLog)
     }
 
 
@@ -209,6 +210,7 @@ func (self *Keeper) getSuccessor(srcIndex int) int {
         logMap := self.bitmap[index]
         if logMap[srcIndex] == true &&
         srcIndex != index {
+            fmt.Println("src and successor", srcIndex, index)
             return index
         }
     }

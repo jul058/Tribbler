@@ -39,6 +39,7 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
         if err == nil {
             tmpClient.Close()
             bsc = &BinStorageClient{ 
+                index: num,
                 prefix: prefix,
                 client: self.clients[num], 
             }
