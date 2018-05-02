@@ -147,7 +147,6 @@ func (self *Keeper) replicate(errorChan chan<- error) {
             if val == true {
                 self.bitmapLock.Lock()
                 self.bitmap[index][index] = true
-                // self.bitmapLock.Unlock()
                 // relicate self
                 self.replicateLog(index, self.getSuccessor(index), index)
                 // needs to check whether this backend is hosting other backend's log and that backend is dead. 
@@ -222,5 +221,5 @@ func (self *Keeper) getPredecessor(srcIndex int) int {
             return index
         }
     }
-    return (srcIndex-1)%len(self.bitmap)
+    return (srcIndex-1+len(self.bitmap))%len(self.bitmap)
 }
