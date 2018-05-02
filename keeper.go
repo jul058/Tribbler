@@ -58,6 +58,7 @@ func (self *Keeper) StartKeeper() error {
                         }
                         synClockChannel <- ret
                     }
+                    //self.aliveBackendsLock.Unlock()
                 }(index)
             }
             for i := 0; i < len(self.backends); i+=1 {
@@ -70,7 +71,9 @@ func (self *Keeper) StartKeeper() error {
     }()
 
     // boot up replication
+    //self.aliveBackendsLock.Lock()
     go self.replicate(errorChannel)
+    //self.aliveBackendsLock.Unlock()
     // will return when errorChannel is unblocked
     return <-errorChannel
 }
@@ -145,7 +148,7 @@ func (self *Keeper) replicate(errorChan chan<- error) {
     for range time.Tick(1 * time.Second) {
         for index, val := range self.aliveBackends {
             if val == true {
-                self.bitmapLock.Lock()
+                //self.bitmapLock.Lock()
                 self.bitmap[index][index] = true
                 // relicate self
                 self.replicateLog(index, self.getSuccessor(index), index)
@@ -156,22 +159,26 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                         self.replicateLog(index, self.getSuccessor(index), key)
                     }
                 }
-                self.bitmapLock.Unlock()
+                //self.bitmapLock.Unlock()
             }
         }
     }
 }
 
 func (self *Keeper) crash(index int) {
-    //fmt.Println("enter crash")
     self.aliveBackends[index] = false
+    /*self.aliveBackendsLock.Lock()
+    self.aliveBackendsLock.Unlock()
     self.bitmapLock.Lock()
     defer self.bitmapLock.Unlock()
+    */
     logMap := self.bitmap[index]
 
+    find := false
     for key := range logMap {
         // if self has other backend's log
         if logMap[key] == true {
+            find = true
             if key == index {
                 self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
             } else {
@@ -181,19 +188,24 @@ func (self *Keeper) crash(index int) {
             self.bitmap[index][key] = false
         }
     }
+    //it means this backend has nver joined the group
+    if !find {
+      self.bitmap[self.getSuccessor(index)][index] = true
+    }
 }
 
 func (self *Keeper) join(index int) {
-    fmt.Println("Enter join")
     self.aliveBackends[index] = true
+    /*self.aliveBackendsLock.Lock()
+    defer self.aliveBackendsLock.Unlock()
     //copy data belongs to this backend back to itself
     self.bitmapLock.Lock()
     defer self.bitmapLock.Unlock()
+    */
     for backupIndex := (index-1+len(self.bitmap))%len(self.bitmap); 
         backupIndex != index; 
         backupIndex = (backupIndex-1+len(self.bitmap))%len(self.bitmap) {
         if self.bitmap[backupIndex][index] == true {
-            fmt.Println("replicatee: %d replicator: %d ", backupIndex, index)
             self.replicateLog(backupIndex, index, index)
             //stop this replicate
             self.bitmap[backupIndex][index] = false
