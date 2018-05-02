@@ -24,8 +24,11 @@ func (self *Keeper) Init() {
     for index, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
-        self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
-        self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
+
+
+        // self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
+        // self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
+
         fmt.Printf("setting alive bin %s\n", strconv.Itoa(index))
     }
 }
