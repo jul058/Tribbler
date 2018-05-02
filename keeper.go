@@ -104,6 +104,24 @@ func (self *Keeper) FindPrimary() int64 {
 	return mink
 }
 
+func (self *Keeper) GetBacks(stub string, backs *[]string) error {
+	if self.kc == nil {
+		return fmt.Errorf("Keeper not configured.")
+	}
+
+	*backs = self.kc.Backs
+	return nil
+}
+
+func (self *Keeper) GetId(stub string, myId *int64) error {
+	if self.kc == nil {
+		return fmt.Errorf("Keeper not configured.")
+	}
+
+	*myId = self.kc.Id
+	return nil
+}
+
 
 func (self *Keeper) StartKeeper() error {
     self.Init()
