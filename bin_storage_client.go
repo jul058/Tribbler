@@ -2,6 +2,7 @@ package triblab
 
 import (
     "fmt"
+    "strconv"
     "strings"
     "trib"
     "trib/colon"
@@ -25,6 +26,22 @@ func (self *BinStorageClient) listHandler(list *trib.List, appendFunc appendList
     }
 }
 
+func (self *BinStorageClient) logOp(opcode string, kv *trib.KeyValue) error {
+    log, err := LogToString(&LogEntry{opcode, *kv})
+    if err != nil {
+        return err
+    }
+    var logSucc bool
+    err = self.client.ListAppend(&trib.KeyValue{log_key + "_" + strconv.Itoa(self.originIndex), log}, &logSucc)
+    if err != nil {
+        return err 
+    }
+    if logSucc == false {
+        return fmt.Errorf("LOG Set failed")
+    }
+    return nil
+}
+
 func (self *BinStorageClient) Get(key string, value *string) error {
     key = self.prefix + colon.Escape(key)
     return self.client.Get(key, value)
@@ -37,19 +54,8 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
 	    return err
     }
 
-    log, e := LogToString(&LogEntry{"Set", *myKv})
-    if e != nil {
-	    return e
-    }
-
-    var logSucc bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key + "_" + string(self.originIndex), log}, &logSucc)
-    if err != nil {
-        return err
-    }
-
-    if logSucc == false {
-	    return fmt.Errorf("LOG Set failed")
+    if !strings.HasPrefix(self.prefix, alive_bin) && !strings.HasPrefix(self.prefix, bitmap_bin) {
+        return self.logOp("Set", myKv)
     }
 
     return nil
@@ -84,20 +90,9 @@ func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
 	    return err
     }
 
-    log, e := LogToString(&LogEntry{"ListAppend", *myKv})
-    if e != nil {
-	    return e
+    if !strings.HasPrefix(self.prefix, alive_bin) && !strings.HasPrefix(self.prefix, bitmap_bin) {
+        return self.logOp("ListAppend", myKv)
     }
-    var logSucc bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key + "_" + string(self.originIndex), log}, &logSucc)
-    if err != nil {
-        return err
-    }
-
-    if logSucc == false {
-	    return fmt.Errorf("LOG ListAppend failed")
-    }
-
     return nil
 }
 
@@ -108,21 +103,9 @@ func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
 	    return err
     }
 
-    log, e := LogToString(&LogEntry{"ListRemove", *myKv})
-    if e != nil {
-	    return e
+    if !strings.HasPrefix(self.prefix, alive_bin) && !strings.HasPrefix(self.prefix, bitmap_bin) {
+        return self.logOp("ListRemove", myKv)
     }
-
-    var logSucc bool
-    err = self.client.ListAppend(&trib.KeyValue{log_key + "_"  + string(self.originIndex), log}, &logSucc)
-    if err != nil {
-        return err 
-    }
-
-    if logSucc == false {
-	    return fmt.Errorf("LOG ListRemove failed")
-    }
-
     return nil
 }
 
