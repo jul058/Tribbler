@@ -77,8 +77,8 @@ func (self *Keeper) StartKeeper() error {
 
 
 func (self *Keeper) replicateLog(replicatee, replicator, src int) {
-    replicator = replicator % len(self.bitmap)
-    replicatee = replicatee % len(self.bitmap)
+    replicator = replicator % len(self.backends)
+    replicatee = replicatee % len(self.backends)
     //if use for, will cause infinite loop when only one alive back-end
     if replicator == replicatee {
         replicator += 1
@@ -189,9 +189,9 @@ func (self *Keeper) join(index int) {
     //copy data belongs to this backend back to itself
     self.bitmapLock.Lock()
     defer self.bitmapLock.Unlock()
-    for backupIndex := (index-1+len(self.bitmap))%len(self.bitmap); 
+    for backupIndex := (index-1+len(self.backends))%len(self.backends); 
         backupIndex != index; 
-        backupIndex = (backupIndex-1+len(self.bitmap))%len(self.bitmap) {
+        backupIndex = (backupIndex-1+len(self.backends))%len(self.backends) {
         if self.bitmap[backupIndex][index] == true {
             fmt.Println("replicatee: %d replicator: %d ", backupIndex, index)
             self.replicateLog(backupIndex, index, index)
@@ -203,23 +203,23 @@ func (self *Keeper) join(index int) {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-    for index := (srcIndex+1)%len(self.bitmap);
+    for index := (srcIndex+1)%len(self.backends);
         index != srcIndex;
-        index = (index+1)%len(self.bitmap) {
+        index = (index+1)%len(self.backends) {
         if self.aliveBackends[index] == true {
             return index
         }
     }
-    return (srcIndex+1)%len(self.bitmap)
+    return (srcIndex+1)%len(self.backends)
 }
 
 func (self *Keeper) getPredecessor(srcIndex int) int {
-    for index := (srcIndex-1+len(self.bitmap))%len(self.bitmap);
+    for index := (srcIndex-1+len(self.backends))%len(self.backends);
         index != srcIndex;
-        index = (index-1+len(self.bitmap))%len(self.bitmap) {
+        index = (index-1+len(self.backends))%len(self.backends) {
         if self.aliveBackends[index] == true {
             return index
         }
     }
-    return (srcIndex-1+len(self.bitmap))%len(self.bitmap)
+    return (srcIndex-1+len(self.backends))%len(self.backends)
 }
