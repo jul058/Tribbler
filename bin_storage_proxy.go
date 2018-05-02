@@ -5,6 +5,7 @@ import (
     "trib"
     "trib/colon"
     "net/rpc"
+    // "strconv"
     // "fmt"
 )
 
@@ -31,25 +32,34 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
     prefix := colon.Escape(name + "::")
     hash := NewHash(prefix)
     originIndex := hash % uint32(len(self.clients))
-    index := originIndex
     //iterately to find available back-end
     var bsc trib.Storage
-    for {
+    // var str string
+    for index := originIndex; ; index = (index+1)%uint32(len(self.clients)) {
         tmpClient, err := rpc.DialHTTP("tcp", self.backs[index])
-        if err == nil {
-            // fmt.Printf("original: %d", originIndex)
-            // fmt.Printf(", current: %d", index)
-            // fmt.Println()
-            tmpClient.Close()
-            bsc = &BinStorageClient{
-                originIndex: int(originIndex),
-                prefix: prefix,
-                client: self.clients[index],
-            }
-            break
+        if err != nil {
+            continue
         }
-        index += 1
-        index %= uint32(len(self.clients))
+        tmpClient.Close()
+        // check whether this backend has it 
+        // err = self.clients[index].Get(strconv.Itoa(int(originIndex)), &str)
+        // if err != nil {
+        //     continue
+        // }
+        // tmp := new(trib.List)
+        // err = self.clients[index].Keys(&trib.Pattern{"", ""}, tmp)
+
+        // // fmt.Printf("%s\n", tmp.L)
+        // if str != "true" {
+        //     // fmt.Printf("%d machine does not have %d data\n", index, int(originIndex))
+        //     continue
+        // }
+        bsc = &BinStorageClient{
+            originIndex: int(originIndex),
+            prefix: prefix,
+            client: self.clients[index],
+        }
+        break
     }
     return bsc
 }

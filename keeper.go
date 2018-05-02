@@ -25,6 +25,7 @@ func (self *Keeper) Init() {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
         self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
+        self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
         fmt.Printf("setting alive bin %s\n", strconv.Itoa(index))
     }
 }
@@ -197,7 +198,6 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     // fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
     // fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
     // self.bitmap[replicator][src] = true
-    self.retrySet(bitmap_bin+strconv.Itoa(replicator), &trib.KeyValue{strconv.Itoa(src), "true"})
 
     //fmt.Println("set true: [%d][%d]",replicator, src)
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
@@ -228,6 +228,7 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
             return
         }
     }
+    self.retrySet(bitmap_bin+strconv.Itoa(replicator), &trib.KeyValue{strconv.Itoa(src), "true"})
 }
 
 
