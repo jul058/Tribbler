@@ -5,8 +5,6 @@ import (
     "time"
     "trib"
     "fmt"
-    "net"
-    "net/http"
     "net/rpc"
 )
 
@@ -63,7 +61,7 @@ type Keeper struct {
 }
 
 func (self *Keeper) Init() {
-    self.kc.Id = time.Now().UnixNano() / time.Microsecond
+    self.kc.Id = time.Now().UnixNano() / int64(time.Microsecond)
 
     self.aliveBackends = make(map[int] bool)
     self.bitmap = make(map[int] (map[int] bool))
@@ -91,8 +89,9 @@ func (self *Keeper) FindPrimary() int64 {
 		}(kaddr)
 	}
 
-	var mink int64 = -1
-	for _ := range self.kc.Addrs {
+	var mink int64 
+	mink = -1
+	for _ = range self.kc.Addrs {
 		k := <-kidChan
 		if mink == -1 {
 			mink = k
