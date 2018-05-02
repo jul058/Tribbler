@@ -5,9 +5,52 @@ import (
     "time"
     "trib"
     "fmt"
+    "net"
+    "net/http"
+    "net/rpc"
 )
 
 const log_key = "LOG_KEY"
+
+// KeeperClient
+type KeeperClient struct {
+	addr string
+}
+
+func (self *KeeperClient) GetBacks(stub string, backs *[]string) error {
+	conn, e := rpc.DialHTTP("tcp", self.addr)
+	if e != nil {
+		return e
+	}
+
+	e = conn.Call("Keeper.GetBacks", stub, backs)
+	if e != nil {
+		conn.Close()
+		return e
+	}
+
+	return conn.Close()
+}
+
+func (self *KeeperClient) GetId(stub string, myId *int64) error {
+	conn, e := rpc.DialHTTP("tcp", self.addr)
+	if e != nil {
+		return e
+	}
+
+	e = conn.Call("Keeper.GetId", stub, myId)
+	if e != nil {
+		conn.Close()
+		return e
+	}
+
+	return conn.Close()
+}
+
+func NewKeeperClient(addr string) *KeeperClient {
+	return &KeeperClient{addr: addr}
+}
+
 
 type Keeper struct {
     kc *trib.KeeperConfig
@@ -20,6 +63,8 @@ type Keeper struct {
 }
 
 func (self *Keeper) Init() {
+    self.kc.Id = time.Now().UnixNano() / time.Microsecond
+
     self.aliveBackends = make(map[int] bool)
     self.bitmap = make(map[int] (map[int] bool))
     for index, addr := range self.kc.Backs {
@@ -29,6 +74,36 @@ func (self *Keeper) Init() {
         self.bitmap[index] = make(map[int] bool)
     }
 }
+
+func (self *Keeper) FindPrimary() int64 {
+	kidChan := make(chan int64)
+	for _, kaddr := range self.kc.Addrs {
+		go func(k string) {
+			kclient := NewKeeperClient(k)
+
+			var kid int64
+			e := kclient.GetId(k, &kid)
+			if e != nil {
+				kidChan <- -1    // -1 as the maximum value to indicate error
+			} else {
+				kidChan <- kid 
+			}
+		}(kaddr)
+	}
+
+	var mink int64 = -1
+	for _ := range self.kc.Addrs {
+		k := <-kidChan
+		if mink == -1 {
+			mink = k
+		} else if k != -1 && k < mink {
+			mink = k
+		}
+	}
+
+	return mink
+}
+
 
 func (self *Keeper) StartKeeper() error {
     self.Init()
@@ -41,6 +116,12 @@ func (self *Keeper) StartKeeper() error {
         var ret uint64
         synClock := uint64(0)
         for range time.Tick(1 * time.Second) {
+	    pri := self.FindPrimary()
+	    if pri != self.kc.Id {
+		    continue
+	    }
+
+	    // do following only if self is primary, i.e. lowest Id
             for index := range self.backends {
                 go func(i int) {
                     err := self.backends[i].Clock(synClock, &ret)
