@@ -1,81 +1,154 @@
 package triblab
 
 import (
-    "sync"
     "time"
     "trib"
     "fmt"
+    "strconv"
+    "trib/colon"
     "net"
     "net/http"
     "net/rpc"
+    "sort"
 )
 
-const log_key = "LOG_KEY"
-
-// KeeperClient
-type KeeperClient struct {
-	addr string
-}
-
-func (self *KeeperClient) GetBacks(stub string, backs *[]string) error {
-	conn, e := rpc.DialHTTP("tcp", self.addr)
-	if e != nil {
-		return e
-	}
-
-	e = conn.Call("Keeper.GetBacks", stub, backs)
-	if e != nil {
-		conn.Close()
-		return e
-	}
-
-	return conn.Close()
-}
-
-func (self *KeeperClient) GetId(stub string, myId *int64) error {
-	conn, e := rpc.DialHTTP("tcp", self.addr)
-	if e != nil {
-		return e
-	}
-
-	e = conn.Call("Keeper.GetId", stub, myId)
-	if e != nil {
-		conn.Close()
-		return e
-	}
-
-	return conn.Close()
-}
-
-func NewKeeperClient(addr string) *KeeperClient {
-	return &KeeperClient{addr: addr}
-}
-
+const log_key       = "LOG_KEY"
+const alive_bin     = "ALIVE_BIN"
+const bitmap_bin    = "BIT_BIN_"
 
 type Keeper struct {
     kc *trib.KeeperConfig
     backends []trib.Storage
-    aliveBackends map[int] bool
-    bitmap map[int] (map[int] bool)
-
-    aliveBackendsLock sync.Mutex
-    bitmapLock sync.Mutex
+    binStorage trib.BinStorage
 }
 
-func (self *Keeper) Init() {
-    self.kc.Id = time.Now().UnixNano() / time.Microsecond
+func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *string) {
+    if self.kc == nil {
+	    //return fmt.Errorf("Keeper Config. is nil.")
+	    errorChannel <- fmt.Errorf("Keeper Config. is nil.")
+            return
+    }
 
-    self.aliveBackends = make(map[int] bool)
-    self.bitmap = make(map[int] (map[int] bool))
-    for index, addr := range self.kc.Backs {
+    for _, b := range self.kc.Backs {
+	    if b == "" {
+		    if self.kc.Ready != nil {
+			    self.kc.Ready <- false
+		    }
+	            errorChannel <- fmt.Errorf("Invalid back-ends address for Keeper config.")
+                    return
+	    }
+    }
+
+    for _, k := range self.kc.Addrs {
+	    if k == "" {
+		    if self.kc.Ready != nil {
+			    self.kc.Ready <- false
+		    }
+                    errorChannel <- fmt.Errorf("Invalid Keeper address.")
+                    return
+	    }
+    }
+
+
+    self.kc.Id = time.Now().UnixNano() / int64(time.Microsecond)
+
+    self.binStorage = NewBinClient(self.kc.Backs)
+
+    for _, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
-        self.aliveBackends[index] = true
-        self.bitmap[index] = make(map[int] bool)
+
+        // self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
+        // self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
     }
+
+    // Keeper struct initialized, starting Keeper Server
+    kserver := rpc.NewServer()
+    err := kserver.RegisterName("Keeper", self)
+    if err != nil {
+	    fmt.Println("Could not register keeper server address %q ", self.kc.Addr())
+	    if self.kc.Ready != nil {
+		    self.kc.Ready <- false
+	    }
+	    errorChannel <- err
+            return
+    }
+
+    l, e := net.Listen("tcp", self.kc.Addr())
+    if e != nil {
+	    fmt.Println("Could not open keeper address %q for listen.", self.kc.Addr())
+	    if self.kc.Ready != nil {
+		    self.kc.Ready <- false
+	    }
+	    errorChannel <- e
+            return
+    }
+
+    if self.kc.Ready != nil {
+	    self.kc.Ready <- true
+    }
+
+    errorChannel <- http.Serve(l, kserver)
 }
 
-func (self *Keeper) FindPrimary() int64 {
+func (self *Keeper) initAliveAndBitmap () error {
+    aliveBin := self.findBin(alive_bin)
+    //set keeper's bin without calling bin()
+    for index, addr := range self.kc.Backs {
+      tmpClient, err := rpc.DialHTTP("tcp",addr)
+      var alive string
+      var bitmap string
+
+      if err != nil {
+        alive = ""
+        bitmap = ""
+      }
+      if err == nil {
+        alive = "true"
+        bitmap = "true"
+        tmpClient.Close()
+      }
+
+      //set alive flag
+      var succ bool
+      aliveBin.Set(&trib.KeyValue{strconv.Itoa(index), alive}, &succ)
+      if !succ {
+        return fmt.Errorf("Initialzie alive Bin failed")
+      }
+      //set bitmap flag
+      bitMapBin := self.findBin(bitmap_bin+strconv.Itoa(index))
+      bitMapBin.Set(&trib.KeyValue{strconv.Itoa(index), bitmap}, &succ)
+      if !succ {
+        return fmt.Errorf("Initialzie bitmap Bin failed")
+      }
+    }
+    return nil
+}
+
+func (self *Keeper) findBin(binName string) trib.Storage{
+      //set alive flag
+      binName = colon.Escape(binName + "::")
+      binHash := NewHash(binName)
+      originAliveIndex := binHash % uint32(len(self.kc.Backs))
+      var bsc trib.Storage
+      for aliveIndex := originAliveIndex; ; aliveIndex = (aliveIndex+1)%uint32(len(self.kc.Backs)) {
+        tmpClient, err := rpc.DialHTTP("tcp", self.kc.Backs[aliveIndex])
+        if err != nil {
+          continue
+        }
+        tmpClient.Close()
+        bsc = &BinStorageClient{
+          originIndex: int(originAliveIndex),
+          prefix: binName,
+          client: self.backends[aliveIndex],
+        }
+        break
+    }
+    return bsc
+}
+
+
+func (self *Keeper) FindPrimary(stub_in string, pri_ret *int64) error {
 	kidChan := make(chan int64)
 	for _, kaddr := range self.kc.Addrs {
 		go func(k string) {
@@ -91,8 +164,9 @@ func (self *Keeper) FindPrimary() int64 {
 		}(kaddr)
 	}
 
-	var mink int64 = -1
-	for _ := range self.kc.Addrs {
+	var mink int64 
+	mink = -1
+	for _ = range self.kc.Addrs {
 		k := <-kidChan
 		if mink == -1 {
 			mink = k
@@ -101,7 +175,8 @@ func (self *Keeper) FindPrimary() int64 {
 		}
 	}
 
-	return mink
+	*pri_ret = mink
+	return nil
 }
 
 func (self *Keeper) GetBacks(stub string, backs *[]string) error {
@@ -122,36 +197,74 @@ func (self *Keeper) GetId(stub string, myId *int64) error {
 	return nil
 }
 
-
-func (self *Keeper) StartKeeper() error {
-    self.Init()
-    if self.kc.Ready != nil {
-        self.kc.Ready <- true
+func (self *Keeper) retryGet(bin_key, key string) string {
+    var val string
+    err := self.binStorage.Bin(bin_key).Get(key, &val)
+    if err != nil {
+        // retry
+        err = self.binStorage.Bin(bin_key).Get(key, &val)
     }
+    if err != nil {
+        return "error"
+    }
+    return val
+}
+
+func (self *Keeper) retrySet(bin_key string, kv *trib.KeyValue) {
+    var succ bool
+    err := self.binStorage.Bin(bin_key).Set(kv, &succ)
+    if err != nil {
+        err = self.binStorage.Bin(bin_key).Set(kv, &succ)
+    }
+    // fmt.Println(err)
+}
+
+func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
+    ret := new(trib.List)
+    err := self.binStorage.Bin(bin_key).Keys(pattern, ret)
+    if err != nil {
+        err = self.binStorage.Bin(bin_key).Keys(pattern, ret)
+    }
+    if err != nil {
+        return []string{}
+    }
+    return ret.L
+}
+
+func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
+    var stub string
     errorChannel := make(chan error)
+    go self.Init("", errorChannel, &stub)
+
+    e := self.initAliveAndBitmap()
+    if e != nil {
+      return e
+    }
     synClockChannel := make(chan uint64)
     go func() {
         var ret uint64
         synClock := uint64(0)
         for range time.Tick(1 * time.Second) {
-	    pri := self.FindPrimary()
-	    if pri != self.kc.Id {
-		    continue
-	    }
 
-	    // do following only if self is primary, i.e. lowest Id
+	    var pri int64
+	    self.FindPrimary("", &pri)
+    	    if pri != self.kc.Id {
+    		   continue
+    	    }
+
+    	    // do following only if self is primary, i.e. lowest Id
             for index := range self.backends {
                 go func(i int) {
                     err := self.backends[i].Clock(synClock, &ret)
                     if err != nil {
                         // heartbeat fails
-                        if self.aliveBackends[i] == true {
+                        if self.retryGet(alive_bin, strconv.Itoa(i)) == "true" {
                             fmt.Println("about to crash, ", i)
                             self.crash(i)
                         }
                         synClockChannel <- 0
                     } else {
-                        if self.aliveBackends[i] == false {
+                        if self.retryGet(alive_bin, strconv.Itoa(i)) == "" {
                             fmt.Println("about to join, ", i)
                             self.join(i)
                         }
@@ -179,8 +292,8 @@ func (self *Keeper) StartKeeper() error {
 
 
 func (self *Keeper) replicateLog(replicatee, replicator, src int) {
-    replicator = replicator % len(self.bitmap)
-    replicatee = replicatee % len(self.bitmap)
+    replicator = replicator % len(self.backends)
+    replicatee = replicatee % len(self.backends)
     //if use for, will cause infinite loop when only one alive back-end
     if replicator == replicatee {
         replicator += 1
@@ -189,32 +302,33 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     backendLog := new(trib.List)
     successorLog := new(trib.List)
     backend := self.backends[replicatee]
-    err := backend.ListGet(log_key + "_" + string(src), backendLog)
+    err := backend.ListGet(log_key + "_" + strconv.Itoa(src), backendLog)
     if err != nil {
         // self crashed
         return
     }
 
     successor := self.backends[replicator]
-    err = successor.ListGet(log_key + "_" + string(src), successorLog)
+    err = successor.ListGet(log_key + "_" + strconv.Itoa(src), successorLog)
     // until it finds a alive successor
     for err != nil {
         // this successor has failed, try next one.
         replicator += 1
         replicator %= len(self.backends)
         successor = self.backends[replicator]
-        err = successor.ListGet(log_key + "_" + string(src), successorLog)
+        err = successor.ListGet(log_key + "_" + strconv.Itoa(src), successorLog)
     }
 
 
     // successor has self log
-    //fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
-    //fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
-    self.bitmap[replicator][src] = true
+    // fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
+    // fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
+    // self.bitmap[replicator][src] = true
+
     //fmt.Println("set true: [%d][%d]",replicator, src)
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
         var succ bool
-        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + string(src), backendLog.L[i]}, &succ)
+        err = successor.ListAppend(&trib.KeyValue{log_key + "_" + strconv.Itoa(src), backendLog.L[i]}, &succ)
         if err != nil {
             // successor failure
             self.replicateLog(replicatee, self.getSuccessor(replicatee), src)
@@ -229,6 +343,8 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
         if logEntry.Opcode == "Set" {
             err = successor.Set(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListAppend" {
+            fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
+            fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
             err = successor.ListAppend(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListRemove" {
             var n int
@@ -240,97 +356,156 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
             return
         }
     }
+    self.retrySet(bitmap_bin+strconv.Itoa(replicator), &trib.KeyValue{strconv.Itoa(src), "true"})
 }
 
 
 func (self *Keeper) replicate(errorChan chan<- error) {
     for range time.Tick(1 * time.Second) {
-        for index, val := range self.aliveBackends {
-            if val == true {
-                //self.bitmapLock.Lock()
-                self.bitmap[index][index] = true
-                // relicate self
-                self.replicateLog(index, self.getSuccessor(index), index)
-                // needs to check whether this backend is hosting other backend's log and that backend is dead. 
-                // if so, then it needs to propogate the log to its successor. 
-                for key, val := range self.bitmap[index] {
-                    if val == true && self.aliveBackends[key] == false {
-                        self.replicateLog(index, self.getSuccessor(index), key)
-                    }
+        for _, indexStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
+            index, _ := strconv.Atoi(indexStr)
+            // fmt.Printf("alive: %d, %d\n", idx, index)
+            self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
+            // relicate self
+            self.replicateLog(index, self.getSuccessor(index), index)
+            // needs to check whether this backend is hosting other backend's log and that backend is dead. 
+            // if so, and it is now holding the only ccpy, then it needs to propogate the log to its successor. 
+            for _, keyStr := range self.retryKeys(bitmap_bin+strconv.Itoa(index), &trib.Pattern{"", ""}) {
+                key, _ := strconv.Atoi(keyStr)
+                copies := self.getNumberOfCopies(keyStr)
+                alive := self.retryGet(alive_bin, keyStr)
+                if alive == "" &&  len(copies) == 1 {
+                    self.replicateLog(index, self.getSuccessor(index), key)
                 }
-                //self.bitmapLock.Unlock()
+                // if key != index {
+                //     self.replicateLog(index, key, key)
+                // }
             }
         }
     }
 }
 
 func (self *Keeper) crash(index int) {
-    self.aliveBackends[index] = false
-    /*self.aliveBackendsLock.Lock()
-    self.aliveBackendsLock.Unlock()
-    self.bitmapLock.Lock()
-    defer self.bitmapLock.Unlock()
-    */
-    logMap := self.bitmap[index]
+    self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), ""})
+    keys := self.retryKeys(bitmap_bin+strconv.Itoa(index), &trib.Pattern{"", ""})
 
-    find := false
-    for key := range logMap {
-        // if self has other backend's log
-        if logMap[key] == true {
-            find = true
-            if key == index {
-                self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
-            } else {
-                self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
-            }
-            // label self no longer has that log
-            self.bitmap[index][key] = false
+    for _, keyStr := range keys {
+        key, _ := strconv.Atoi(keyStr)
+        val := self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
+        if val == "true" {
+          if key == index {
+            self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
+          } else {
+            self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
+          }
         }
+        // label self no longer has that log
+        self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
     //it means this backend has nver joined the group
-    if !find {
-      self.bitmap[self.getSuccessor(index)][index] = true
-    }
 }
 
 func (self *Keeper) join(index int) {
-    self.aliveBackends[index] = true
-    /*self.aliveBackendsLock.Lock()
-    defer self.aliveBackendsLock.Unlock()
+    fmt.Println("Enter join")
+    self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
     //copy data belongs to this backend back to itself
-    self.bitmapLock.Lock()
-    defer self.bitmapLock.Unlock()
-    */
-    for backupIndex := (index-1+len(self.bitmap))%len(self.bitmap); 
-        backupIndex != index; 
-        backupIndex = (backupIndex-1+len(self.bitmap))%len(self.bitmap) {
-        if self.bitmap[backupIndex][index] == true {
-            self.replicateLog(backupIndex, index, index)
-            //stop this replicate
-            self.bitmap[backupIndex][index] = false
-            break
+    // for backupIndex := (index-1+len(self.backends))%len(self.backends); 
+    //     backupIndex != index; 
+    //     backupIndex = (backupIndex-1+len(self.backends))%len(self.backends) {
+    //     if self.retryGet(bitmap_bin+strconv.Itoa(backupIndex), strconv.Itoa(index)) == "true" {
+    //         fmt.Printf("replicatee: %d replicator: %d ", backupIndex, index)
+    //         self.replicateLog(backupIndex, index, index)
+    //         //stop this replicate
+    //         self.retrySet(bitmap_bin+strconv.Itoa(backupIndex), &trib.KeyValue{strconv.Itoa(index), ""})
+    //         break
+    //     }
+    // }
+
+    successorMap := make([][]int, len(self.backends))
+    for i := range successorMap {
+        successorMap[i] = []int{}
+    }
+
+    for _, aliveIndexStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
+        aliveIndex, _ := strconv.Atoi(aliveIndexStr)
+        // this aliveIndexStr is booking list
+        bookKeep := self.retryKeys(bitmap_bin+aliveIndexStr, &trib.Pattern{"", ""})
+        fmt.Printf("node %d is book keeping %s\n", aliveIndex, bookKeep)
+        // for each replicatee, record their replicator
+        for _, replicateeStr := range bookKeep {
+            replicatee, _ := strconv.Atoi(replicateeStr)
+            successorMap[replicatee] = append(successorMap[replicatee], aliveIndex)
         }
     }
+
+    for replicatee := range successorMap {
+        numPairs := []*NumPair{}
+        for replicator := range successorMap[replicatee] {
+            numPairs = append(numPairs, 
+                &NumPair{(successorMap[replicatee][replicator]+len(self.backends)-replicatee)%len(self.backends), 
+                        successorMap[replicatee][replicator],})
+        }
+        sort.Sort(ByKey(numPairs))
+        for replicator := 1; replicator < len(successorMap[replicatee]); replicator+=1 {
+            // invalidate
+            fmt.Printf("invalidating replicator %d on replicatee %d\n", replicator, replicatee)
+            self.retrySet(bitmap_bin+strconv.Itoa(numPairs[replicator].Right), &trib.KeyValue{strconv.Itoa(replicatee), ""})
+        }
+        if len(numPairs) > 0 {
+            fmt.Printf("replicate log from %d to %d on log %d\n", numPairs[0].Right, index, replicatee)
+            self.replicateLog(numPairs[0].Right, index, replicatee)
+        }
+    }
+
+}
+
+// func (self *Keeper) isClosedToSrc(src, index int, copies []int) bool {
+//     if len(copies) <= 2 {
+//         return true
+//     }
+//     numPairList := []NumPair{}
+//     for i := 0; i < len(copies); i+=1 {
+//         if copies[i] < src {
+//             copies[i] += len(self.backends)
+//         }
+//         numPairList = append(numPairList, &NumPair{copies[i]-src, i})
+//     }
+//     sort.Sort(ByKey(numPairList))
+//     return numPairList[0].Right == index || numPairList[1].Right == index
+// }
+
+func (self *Keeper) getNumberOfCopies(index string) []int {
+    copyIndex := []int{}
+    for key := range self.backends {
+        if self.retryGet(bitmap_bin+strconv.Itoa(key), index) == "true" {
+            // cnt += 1
+            copyIndex = append(copyIndex, key)
+        }
+    }
+    return copyIndex
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-    for index := (srcIndex+1)%len(self.bitmap);
+//    fmt.Println("get in successor")
+    for index := (srcIndex+1)%len(self.backends);
         index != srcIndex;
-        index = (index+1)%len(self.bitmap) {
-        if self.aliveBackends[index] == true {
+        index = (index+1)%len(self.backends) {
+        if self.retryGet(alive_bin, strconv.Itoa(index)) == "true" && 
+            self.retryGet(bitmap_bin+strconv.Itoa(index), strconv.Itoa(srcIndex)) == "true" {
             return index
         }
     }
-    return (srcIndex+1)%len(self.bitmap)
+    return (srcIndex+1)%len(self.backends)
 }
 
 func (self *Keeper) getPredecessor(srcIndex int) int {
-    for index := (srcIndex-1+len(self.bitmap))%len(self.bitmap);
+    for index := (srcIndex-1+len(self.backends))%len(self.backends);
         index != srcIndex;
-        index = (index-1+len(self.bitmap))%len(self.bitmap) {
-        if self.aliveBackends[index] == true {
+        index = (index-1+len(self.backends))%len(self.backends) {
+        if self.retryGet(alive_bin, strconv.Itoa(index)) == "true" && 
+            self.retryGet(bitmap_bin+strconv.Itoa(index), strconv.Itoa(srcIndex)) == "true" {
             return index
         }
     }
-    return (srcIndex-1+len(self.bitmap))%len(self.bitmap)
+    return (srcIndex-1+len(self.backends))%len(self.backends)
 }
