@@ -5,6 +5,7 @@ import (
     "trib"
     "fmt"
     "strconv"
+    // "sort"
 )
 
 const log_key       = "LOG_KEY"
@@ -32,6 +33,7 @@ func (self *Keeper) Init() {
         fmt.Printf("setting alive bin %s\n", strconv.Itoa(index))
     }
 }
+
 
 func (self *Keeper) FindPrimary() int64 {
 	kidChan := make(chan int64)
@@ -220,6 +222,8 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
         if logEntry.Opcode == "Set" {
             err = successor.Set(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListAppend" {
+            fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
+            fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
             err = successor.ListAppend(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListRemove" {
             var n int
@@ -244,12 +248,23 @@ func (self *Keeper) replicate(errorChan chan<- error) {
             // relicate self
             self.replicateLog(index, self.getSuccessor(index), index)
             // needs to check whether this backend is hosting other backend's log and that backend is dead. 
-            // if so, then it needs to propogate the log to its successor. 
+            // if so, and it is now holding the only ccpy, then it needs to propogate the log to its successor. 
             for _, keyStr := range self.retryKeys(bitmap_bin+strconv.Itoa(index), &trib.Pattern{"", ""}) {
                 key, _ := strconv.Atoi(keyStr)
-                if self.retryGet(alive_bin, keyStr) == "" {
+                copies := self.getNumberOfCopies(keyStr)
+                alive := self.retryGet(alive_bin, keyStr)
+                if alive == "" &&  len(copies) == 1 {
                     self.replicateLog(index, self.getSuccessor(index), key)
-                }
+                } 
+                // else if alive == "true" && len(copies) >= 2 {
+                //     for i := 0; i < len(copies); i+=1 {
+                //         if (index-copies[i]+len(self.backends))%len(self.backends) > 
+                //         (key-copies[i]+len(self.backends))%len(self.backends) && key != copies[i] {
+                //             self.replicateLog(index, key, copies[i])
+                //             self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
+                //         }
+                //     }
+                // }
             }
         }
     }
@@ -262,11 +277,6 @@ func (self *Keeper) crash(index int) {
     for _, keyStr := range keys {
         key, _ := strconv.Atoi(keyStr)
         fmt.Printf("index: %d, key: %d\n", index, key)
-        if key == index {
-            self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
-        } else {
-            self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
-        }
         // label self no longer has that log
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
@@ -276,17 +286,44 @@ func (self *Keeper) join(index int) {
     fmt.Println("Enter join")
     self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
     //copy data belongs to this backend back to itself
-    for backupIndex := (index-1+len(self.backends))%len(self.backends); 
-        backupIndex != index; 
-        backupIndex = (backupIndex-1+len(self.backends))%len(self.backends) {
-        if self.retryGet(bitmap_bin+strconv.Itoa(backupIndex), strconv.Itoa(index)) == "true" {
-            fmt.Println("replicatee: %d replicator: %d ", backupIndex, index)
-            self.replicateLog(backupIndex, index, index)
-            //stop this replicate
-            self.retrySet(bitmap_bin+strconv.Itoa(backupIndex), &trib.KeyValue{strconv.Itoa(index), ""})
-            break
+    // for backupIndex := (index-1+len(self.backends))%len(self.backends); 
+    //     backupIndex != index; 
+    //     backupIndex = (backupIndex-1+len(self.backends))%len(self.backends) {
+    //     if self.retryGet(bitmap_bin+strconv.Itoa(backupIndex), strconv.Itoa(index)) == "true" {
+    //         fmt.Printf("replicatee: %d replicator: %d ", backupIndex, index)
+    //         self.replicateLog(backupIndex, index, index)
+    //         //stop this replicate
+    //         self.retrySet(bitmap_bin+strconv.Itoa(backupIndex), &trib.KeyValue{strconv.Itoa(index), ""})
+    //         break
+    //     }
+    // }
+    // self.retryKeys(alive_bin)
+}
+
+// func (self *Keeper) isClosedToSrc(src, index int, copies []int) bool {
+//     if len(copies) <= 2 {
+//         return true
+//     }
+//     numPairList := []NumPair{}
+//     for i := 0; i < len(copies); i+=1 {
+//         if copies[i] < src {
+//             copies[i] += len(self.backends)
+//         }
+//         numPairList = append(numPairList, &NumPair{copies[i]-src, i})
+//     }
+//     sort.Sort(ByKey(numPairList))
+//     return numPairList[0].Right == index || numPairList[1].Right == index
+// }
+
+func (self *Keeper) getNumberOfCopies(index string) []int {
+    copyIndex := []int{}
+    for key := range self.backends {
+        if self.retryGet(bitmap_bin+strconv.Itoa(key), index) == "true" {
+            // cnt += 1
+            copyIndex = append(copyIndex, key)
         }
     }
+    return copyIndex
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {

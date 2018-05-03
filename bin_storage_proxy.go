@@ -41,17 +41,17 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
             continue
         }
         tmpClient.Close()
-        // // check whether this backend has it 
+        // check whether this backend has it 
         // err = self.clients[index].Get(strconv.Itoa(int(originIndex)), &str)
         // if err != nil {
         //     continue
         // }
-        
+
         // if str != "true" {
         //     // fmt.Printf("%d machine does not have %d data\n", index, int(originIndex))
         //     continue
         // }
-
+        // fmt.Printf("Bin returns %d backend, original: %d\n", index, originIndex)
         bsc = &BinStorageClient{
             originIndex: int(originIndex),
             prefix: prefix,

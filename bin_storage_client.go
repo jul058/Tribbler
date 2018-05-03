@@ -54,11 +54,7 @@ func (self *BinStorageClient) Set(kv *trib.KeyValue, succ *bool) error {
 	    return err
     }
 
-    if !strings.HasPrefix(self.prefix, alive_bin) && !strings.HasPrefix(self.prefix, bitmap_bin) {
-        return self.logOp("Set", myKv)
-    }
-
-    return nil
+    return self.logOp("Set", myKv)
 }
 
 func (self *BinStorageClient) Keys(p *trib.Pattern, list *trib.List) error {
@@ -90,10 +86,7 @@ func (self *BinStorageClient) ListAppend(kv *trib.KeyValue, succ *bool) error {
 	    return err
     }
 
-    if !strings.HasPrefix(self.prefix, alive_bin) && !strings.HasPrefix(self.prefix, bitmap_bin) {
-        return self.logOp("ListAppend", myKv)
-    }
-    return nil
+    return self.logOp("ListAppend", myKv)
 }
 
 func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
@@ -103,10 +96,7 @@ func (self *BinStorageClient) ListRemove(kv *trib.KeyValue, n *int) error {
 	    return err
     }
 
-    if !strings.HasPrefix(self.prefix, alive_bin) && !strings.HasPrefix(self.prefix, bitmap_bin) {
-        return self.logOp("ListRemove", myKv)
-    }
-    return nil
+    return self.logOp("ListRemove", myKv)
 }
 
 func (self *BinStorageClient) ListKeys(p *trib.Pattern, list *trib.List) error {
