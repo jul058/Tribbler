@@ -5,7 +5,9 @@ import (
     "trib"
     "fmt"
     "strconv"
-    // "sort"
+    "net"
+    "net/http"
+    "net/rpc"
 )
 
 const log_key       = "LOG_KEY"
@@ -18,7 +20,30 @@ type Keeper struct {
     binStorage trib.BinStorage
 }
 
-func (self *Keeper) Init() {
+func (self *Keeper) Init() error {
+    if self.kc == nil {
+	    return fmt.Errorf("Keeper Config. is nil.")
+    }
+
+    for _, b := range self.kc.Backs {
+	    if b == "" {
+		    if self.kc.Ready != nil {
+			    self.kc.Ready <- false
+		    }
+		    return fmt.Errorf("Invalid back-ends address for Keeper config.")
+	    }
+    }
+
+    for _, k := range self.kc.Addrs {
+	    if k == "" {
+		    if self.kc.Ready != nil {
+			    self.kc.Ready <- false
+		    }
+		    return fmt.Errorf("Invalid Keeper address.")
+	    }
+    }
+
+
     self.kc.Id = time.Now().UnixNano() / int64(time.Microsecond)
 
     self.binStorage = NewBinClient(self.kc.Backs)
@@ -32,6 +57,33 @@ func (self *Keeper) Init() {
 
         fmt.Printf("setting alive bin %s\n", strconv.Itoa(index))
     }
+
+
+    // Keeper struct initialized, starting Keeper Server
+    kserver := rpc.NewServer()
+    err := kserver.RegisterName("Keeper", self)
+    if err != nil {
+	    fmt.Println("Could not register keeper server address %q ", self.kc.Addr())
+	    if self.kc.Ready != nil {
+		    self.kc.Ready <- false
+	    }
+	    return err
+    }
+
+    l, e := net.Listen("tcp", self.kc.Addr())
+    if e != nil {
+	    fmt.Println("Could not open keeper address %q for listen.", self.kc.Addr())
+	    if self.kc.Ready != nil {
+		    self.kc.Ready <- false
+	    }
+	    return e
+    }
+
+    if self.kc.Ready != nil {
+	    self.kc.Ready <- true
+    }
+
+    return http.Serve(l, kserver)
 }
 
 
@@ -118,10 +170,11 @@ func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
 }
 
 func (self *Keeper) StartKeeper() error {
-    self.Init()
-    if self.kc.Ready != nil {
-        self.kc.Ready <- true
+    e := self.Init()
+    if e != nil {
+	    return e
     }
+
     errorChannel := make(chan error)
     synClockChannel := make(chan uint64)
     go func() {
