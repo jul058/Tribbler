@@ -21,7 +21,7 @@ type Keeper struct {
     binStorage trib.BinStorage
 }
 
-func (self *Keeper) Init() error {
+func (self *Keeper) Init(stub_in string, stub_ret *string) error {
     if self.kc == nil {
 	    return fmt.Errorf("Keeper Config. is nil.")
     }
@@ -87,7 +87,12 @@ func (self *Keeper) Init() error {
     return http.Serve(l, kserver)
 }
 
+<<<<<<< HEAD
 func (self *Keeper) FindPrimary() int64 {
+=======
+
+func (self *Keeper) FindPrimary(stub_in string, pri_ret *int64) error {
+>>>>>>> 639099ead5535ef8749a0e0fb2ee557d275a09ff
 	kidChan := make(chan int64)
 	for _, kaddr := range self.kc.Addrs {
 		go func(k string) {
@@ -114,7 +119,8 @@ func (self *Keeper) FindPrimary() int64 {
 		}
 	}
 
-	return mink
+	*pri_ret = mink
+	return nil
 }
 
 func (self *Keeper) GetBacks(stub string, backs *[]string) error {
@@ -169,8 +175,9 @@ func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
     return ret.L
 }
 
-func (self *Keeper) StartKeeper() error {
-    e := self.Init()
+func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
+    var stub string
+    e := self.Init("", &stub)
     if e != nil {
 	    return e
     }
@@ -182,10 +189,11 @@ func (self *Keeper) StartKeeper() error {
         synClock := uint64(0)
         for range time.Tick(1 * time.Second) {
 
-    	    // pri := self.FindPrimary()
-    	    // if pri != self.kc.Id {
-    		   //  continue
-    	    // }
+	    var pri int64
+	    self.FindPrimary("", &pri)
+    	    if pri != self.kc.Id {
+    		   continue
+    	    }
 
     	    // do following only if self is primary, i.e. lowest Id
             for index := range self.backends {

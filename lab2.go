@@ -9,7 +9,8 @@ func NewBinClient(backs []string) trib.BinStorage {
 }
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
-    return (&Keeper{ kc: kc, backends: []trib.Storage{} }).StartKeeper()
+    var stub string
+    return (&Keeper{ kc: kc, backends: []trib.Storage{} }).StartKeeper("", &stub)
 }
 
 func NewFront(s trib.BinStorage) trib.Server {
