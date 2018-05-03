@@ -87,12 +87,8 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
     return http.Serve(l, kserver)
 }
 
-<<<<<<< HEAD
-func (self *Keeper) FindPrimary() int64 {
-=======
 
 func (self *Keeper) FindPrimary(stub_in string, pri_ret *int64) error {
->>>>>>> 639099ead5535ef8749a0e0fb2ee557d275a09ff
 	kidChan := make(chan int64)
 	for _, kaddr := range self.kc.Addrs {
 		go func(k string) {
@@ -213,6 +209,7 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
                         }
                         synClockChannel <- ret
                     }
+                    //self.aliveBackendsLock.Unlock()
                 }(index)
             }
             for i := 0; i < len(self.backends); i+=1 {
@@ -225,7 +222,9 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     }()
 
     // boot up replication
+    //self.aliveBackendsLock.Lock()
     go self.replicate(errorChannel)
+    //self.aliveBackendsLock.Unlock()
     // will return when errorChannel is unblocked
     return <-errorChannel
 }
