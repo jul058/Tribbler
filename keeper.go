@@ -8,6 +8,7 @@ import (
     "net"
     "net/http"
     "net/rpc"
+    "sort"
 )
 
 const log_key       = "LOG_KEY"
@@ -85,7 +86,6 @@ func (self *Keeper) Init() error {
 
     return http.Serve(l, kserver)
 }
-
 
 func (self *Keeper) FindPrimary() int64 {
 	kidChan := make(chan int64)
@@ -174,7 +174,7 @@ func (self *Keeper) StartKeeper() error {
     if e != nil {
 	    return e
     }
-
+    
     errorChannel := make(chan error)
     synClockChannel := make(chan uint64)
     go func() {
@@ -308,15 +308,9 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                 alive := self.retryGet(alive_bin, keyStr)
                 if alive == "" &&  len(copies) == 1 {
                     self.replicateLog(index, self.getSuccessor(index), key)
-                } 
-                // else if alive == "true" && len(copies) >= 2 {
-                //     for i := 0; i < len(copies); i+=1 {
-                //         if (index-copies[i]+len(self.backends))%len(self.backends) > 
-                //         (key-copies[i]+len(self.backends))%len(self.backends) && key != copies[i] {
-                //             self.replicateLog(index, key, copies[i])
-                //             self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
-                //         }
-                //     }
+                }
+                // if key != index {
+                //     self.replicateLog(index, key, key)
                 // }
             }
         }
@@ -350,7 +344,43 @@ func (self *Keeper) join(index int) {
     //         break
     //     }
     // }
-    // self.retryKeys(alive_bin)
+
+    successorMap := make([][]int, len(self.backends))
+    for i := range successorMap {
+        successorMap[i] = []int{}
+    }
+
+    for _, aliveIndexStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
+        aliveIndex, _ := strconv.Atoi(aliveIndexStr)
+        // this aliveIndexStr is booking list
+        bookKeep := self.retryKeys(bitmap_bin+aliveIndexStr, &trib.Pattern{"", ""})
+        fmt.Printf("node %d is book keeping %s\n", aliveIndex, bookKeep)
+        // for each replicatee, record their replicator
+        for _, replicateeStr := range bookKeep {
+            replicatee, _ := strconv.Atoi(replicateeStr)
+            successorMap[replicatee] = append(successorMap[replicatee], aliveIndex)
+        }
+    }
+
+    for replicatee := range successorMap {
+        numPairs := []*NumPair{}
+        for replicator := range successorMap[replicatee] {
+            numPairs = append(numPairs, 
+                &NumPair{(successorMap[replicatee][replicator]+len(self.backends)-replicatee)%len(self.backends), 
+                        successorMap[replicatee][replicator],})
+        }
+        sort.Sort(ByKey(numPairs))
+        for replicator := 1; replicator < len(successorMap[replicatee]); replicator+=1 {
+            // invalidate
+            fmt.Printf("invalidating replicator %d on replicatee %d\n", replicator, replicatee)
+            self.retrySet(bitmap_bin+strconv.Itoa(numPairs[replicator].Right), &trib.KeyValue{strconv.Itoa(replicatee), ""})
+        }
+        if len(numPairs) > 0 {
+            fmt.Printf("replicate log from %d to %d on log %d\n", numPairs[0].Right, index, replicatee)
+            self.replicateLog(numPairs[0].Right, index, replicatee)
+        }
+    }
+
 }
 
 // func (self *Keeper) isClosedToSrc(src, index int, copies []int) bool {
