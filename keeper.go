@@ -406,33 +406,20 @@ func (self *Keeper) crash(index int) {
 
 func (self *Keeper) join(index int) {
     fmt.Println("Enter join")
-    //copy data belongs to this backend back to itself
-    // for backupIndex := (index-1+len(self.backends))%len(self.backends); 
-    //     backupIndex != index; 
-    //     backupIndex = (backupIndex-1+len(self.backends))%len(self.backends) {
-    //     if self.retryGet(bitmap_bin+strconv.Itoa(backupIndex), strconv.Itoa(index)) == "true" {
-    //         fmt.Printf("replicatee: %d replicator: %d ", backupIndex, index)
-    //         self.replicateLog(backupIndex, index, index)
-    //         //stop this replicate
-    //         self.retrySet(bitmap_bin+strconv.Itoa(backupIndex), &trib.KeyValue{strconv.Itoa(index), ""})
-    //         break
-    //     }
-    // }
-
     successorMap := make([][]int, len(self.backends))
     for i := range successorMap {
         successorMap[i] = []int{}
     }
 
-    for _, aliveIndexStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
-        aliveIndex, _ := strconv.Atoi(aliveIndexStr)
-        // this aliveIndexStr is booking list
-        bookKeep := self.retryKeys(bitmap_bin+aliveIndexStr, &trib.Pattern{"", ""})
-        fmt.Printf("node %d is book keeping %s\n", aliveIndex, bookKeep)
+    for _, replicatorStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
+        replicator, _ := strconv.Atoi(replicatorStr)
+        // this replicatorStr is booking list
+        bookKeep := self.retryKeys(bitmap_bin+replicatorStr, &trib.Pattern{"", ""})
+        fmt.Printf("node %d is book keeping %s\n", replicator, bookKeep)
         // for each replicatee, record their replicator
         for _, replicateeStr := range bookKeep {
             replicatee, _ := strconv.Atoi(replicateeStr)
-            successorMap[replicatee] = append(successorMap[replicatee], aliveIndex)
+            successorMap[replicatee] = append(successorMap[replicatee], replicator)
         }
     }
 
@@ -458,26 +445,10 @@ func (self *Keeper) join(index int) {
 
 }
 
-// func (self *Keeper) isClosedToSrc(src, index int, copies []int) bool {
-//     if len(copies) <= 2 {
-//         return true
-//     }
-//     numPairList := []NumPair{}
-//     for i := 0; i < len(copies); i+=1 {
-//         if copies[i] < src {
-//             copies[i] += len(self.backends)
-//         }
-//         numPairList = append(numPairList, &NumPair{copies[i]-src, i})
-//     }
-//     sort.Sort(ByKey(numPairList))
-//     return numPairList[0].Right == index || numPairList[1].Right == index
-// }
-
 func (self *Keeper) getNumberOfCopies(index string) []int {
     copyIndex := []int{}
     for key := range self.backends {
         if self.retryGet(bitmap_bin+strconv.Itoa(key), index) == "true" {
-            // cnt += 1
             copyIndex = append(copyIndex, key)
         }
     }

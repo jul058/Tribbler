@@ -6,7 +6,7 @@ import (
     "trib/colon"
     "net/rpc"
     "strconv"
-    // "fmt"
+    "fmt"
     //"strings"
 )
 
@@ -51,7 +51,7 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
                 prefix: prefix,
                 client: self.clients[index],
         }
-        // fmt.Printf("%s bin mapped on %d, original Index %d\n", name, index, originIndex)
+        fmt.Printf("%s bin mapped on %d, original Index %d\n", name, index, originIndex)
         break
       }
     }
@@ -81,13 +81,7 @@ func (self *BinStorageProxy) checkIfValid(index uint32) bool {
     }
     var result string
     bsc.Get(strconv.Itoa(int(index)), &result)
-/*
-    fmt.Printf("index: %d", aliveIndex)
-    fmt.Println()
-    fmt.Printf("result: %v", result)
-    fmt.Println()
-    fmt.Println()
-   */
+
     if result == "" {
       continue
     }
