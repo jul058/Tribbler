@@ -6,7 +6,7 @@ import (
     "trib/colon"
     "net/rpc"
     "strconv"
-    // "fmt"
+//    "fmt"
     //"strings"
 )
 
@@ -51,6 +51,11 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
                 client: self.clients[index],
         }
         // fmt.Printf("%s bin mapped on %d, original Index %d\n", name, index, originIndex)
+/*
+        if name == bitmap_bin + "1" {
+          fmt.Println("index on ", index)
+        }
+*/
         break
       }
     }

@@ -59,7 +59,7 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
 
-
+    }
     // Keeper struct initialized, starting Keeper Server
     // cannot use kc.Ready because there could be other waiting points beyond this function.
     var serverUp = make(chan bool, 1)
@@ -146,7 +146,6 @@ func (self *Keeper) initAliveAndBitmap () error {
     }
     return nil
 }
-
 
 func (self *Keeper) findBin(binName string) trib.Storage{
       //set alive flag
@@ -283,6 +282,8 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
                     if err != nil {
                         // heartbeat fails
                         if self.retryGet(alive_bin, strconv.Itoa(i)) == "true" {
+                            self.retrySet(alive_bin,
+                              &trib.KeyValue{strconv.Itoa(i), "false"})
                             fmt.Println("about to crash, ", i)
                             self.crash(i)
                         }
@@ -404,6 +405,11 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                     copies := self.getNumberOfCopies(keyStr)
                     alive := self.retryGet(alive_bin, keyStr)
                     if alive != "true" && len(copies) == 1 {
+/*
+                        if index == 0 {
+                          fmt.Printf("%d is sending %d to %d\n", index, key, self.getSuccessor(index))
+                        }
+*/
                         self.replicateLog(index, self.getSuccessor(index), key)
                     }
                 }
@@ -419,6 +425,9 @@ func (self *Keeper) crash(index int) {
     keys := self.retryKeys(bitmap_bin+strconv.Itoa(index), &trib.Pattern{"", ""})
 
     for _, keyStr := range keys {
+         if index == 0 {
+           fmt.Println("keys: ", keyStr)
+         }
         key, _ := strconv.Atoi(keyStr)
 /*
          self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
@@ -427,8 +436,8 @@ func (self *Keeper) crash(index int) {
          } else {
              self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
          }
-*/
         // label self no longer has that log
+*/
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
 }
@@ -447,7 +456,7 @@ func (self *Keeper) join(index int) {
           replicator, _ := strconv.Atoi(replicatorStr)
           // this replicatorStr is booking list
           bookKeep := self.retryKeys(bitmap_bin+replicatorStr, &trib.Pattern{"", ""})
-          //fmt.Printf("node %d is book keeping %s\n", replicator, bookKeep)
+          fmt.Printf("node %d is book keeping %s\n", replicator, bookKeep)
           // for each replicatee, record their replicator
           for _, replicateeStr := range bookKeep {
             replicatee, _ := strconv.Atoi(replicateeStr)
@@ -470,6 +479,7 @@ func (self *Keeper) join(index int) {
             self.replicateLog(numPairs[0].Right, numPairs[1].Right, replicatee)
             self.replicateLog(numPairs[1].Right, numPairs[0].Right, replicatee)
         }
+            fmt.Printf("length: %d\n", len(numPairs))
         for replicator := 2; replicator < len(numPairs); replicator+=1 {
             // invalidate
             fmt.Printf("invalidating replicator %d on replicatee %d\n", numPairs[replicator].Right, replicatee)
