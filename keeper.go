@@ -316,20 +316,21 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
         }
     }()
 
+    // unblock any external wait 
+    if self.kc.Ready != nil {
+	    self.kc.Ready <- true
+    }
+
     // boot up replication
     go self.replicate(errorChannel)
     // will return when errorChannel is unblocked
     e = <-errorChannel
     if e != nil {
-	    if self.kc.Ready != nil {
-		    self.kc.Ready <- false
-	    }
+//	    if self.kc.Ready != nil {
+//		    self.kc.Ready <- false
+//	    }
+            fmt.Println("StartKeeper replicate channel error ", e)
 	    return e
-    }
-
-    // unblock any external wait 
-    if self.kc.Ready != nil {
-	    self.kc.Ready <- true
     }
 
     return nil
