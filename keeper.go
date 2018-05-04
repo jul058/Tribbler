@@ -378,8 +378,8 @@ func (self *Keeper) replicate(errorChan chan<- error) {
             self.replicateLog(index, self.getSuccessor(index), index)
             // needs to check whether this backend is hosting other backend's log and that backend is dead. 
             // if so, and it is now holding the only ccpy, then it needs to propogate the log to its successor. 
-            bookKeep := self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""})
-            fmt.Printf("\nReplicate: node %d is book keeping %s\n\n", indexStr, bookKeep)
+            // bookKeep := self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""})
+            // fmt.Printf("\nReplicate: node %d is book keeping %s\n\n", indexStr, bookKeep)
             for _, keyStr := range self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""}) {
                 key, _ := strconv.Atoi(keyStr)
                 copies := self.getNumberOfCopies(keyStr)
@@ -439,15 +439,16 @@ func (self *Keeper) join(index int) {
                 &NumPair{(successorMap[replicatee][replicator]+len(self.backends)-replicatee)%len(self.backends), 
                         successorMap[replicatee][replicator],})
         }
+        numPairs = append(numPairs, 
+            &NumPair{(index+len(self.backends)-replicatee)%len(self.backends), index})
         sort.Sort(ByKey(numPairs))
-        for replicator := 1; replicator < len(successorMap[replicatee]); replicator+=1 {
+        self.replicateLog(numPairs[0].Right, numPairs[1].Right, replicatee)
+        self.replicateLog(numPairs[1].Right, numPairs[0].Right, replicatee)
+
+        for replicator := 2; replicator < len(numPairs); replicator+=1 {
             // invalidate
             fmt.Printf("invalidating replicator %d on replicatee %d\n", numPairs[replicator].Right, replicatee)
             self.retrySet(bitmap_bin+strconv.Itoa(numPairs[replicator].Right), &trib.KeyValue{strconv.Itoa(replicatee), ""})
-        }
-        if len(numPairs) > 0 {
-            fmt.Printf("replicate log from %d to %d on log %d\n", numPairs[0].Right, index, replicatee)
-            self.replicateLog(numPairs[0].Right, index, replicatee)
         }
     }
     self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
