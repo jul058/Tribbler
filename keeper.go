@@ -5,11 +5,11 @@ import (
     "trib"
     "fmt"
     "strconv"
-    "trib/colon"
     "net"
     "net/http"
     "net/rpc"
     "sort"
+    "trib/colon"
 )
 
 const log_key       = "LOG_KEY"
@@ -22,11 +22,9 @@ type Keeper struct {
     binStorage trib.BinStorage
 }
 
-func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *string) {
+func (self *Keeper) Init(stub_in string, stub_ret *string) error {
     if self.kc == nil {
-	    //return fmt.Errorf("Keeper Config. is nil.")
-	    errorChannel <- fmt.Errorf("Keeper Config. is nil.")
-            return
+	    return fmt.Errorf("Keeper Config. is nil.")
     }
 
     for _, b := range self.kc.Backs {
@@ -34,8 +32,7 @@ func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *st
 		    if self.kc.Ready != nil {
 			    self.kc.Ready <- false
 		    }
-            errorChannel <- fmt.Errorf("Invalid back-ends address for Keeper config.")
-            return
+		    return fmt.Errorf("Invalid back-ends address for Keeper config.")
 	    }
     }
 
@@ -44,8 +41,7 @@ func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *st
 		    if self.kc.Ready != nil {
 			    self.kc.Ready <- false
 		    }
-            errorChannel <- fmt.Errorf("Invalid Keeper address.")
-            return
+		    return fmt.Errorf("Invalid Keeper address.")
 	    }
     }
 
@@ -53,42 +49,69 @@ func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *st
     self.kc.Id = time.Now().UnixNano() / int64(time.Microsecond)
 
     self.binStorage = NewBinClient(self.kc.Backs)
-
     for _, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
+
 
         // self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
         // self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
     }
 
+
     // Keeper struct initialized, starting Keeper Server
-    kserver := rpc.NewServer()
-    err := kserver.RegisterName("Keeper", self)
-    if err != nil {
-	    fmt.Println("Could not register keeper server address %q ", self.kc.Addr())
+    // cannot use kc.Ready because there could be other waiting points beyond this function.
+    var serverUp = make(chan bool, 1)
+    var serverErr = make(chan error, 1)
+    
+    go func(self *Keeper, ready chan bool, errs chan error) error {
+            kserver := rpc.NewServer()
+            err := kserver.RegisterName("Keeper", self)
+            if err != nil {
+        	    fmt.Println("Could not register keeper server address %q ", self.kc.Addr())
+		    if ready != nil {
+			    ready <- false
+		    }
+		    if errs != nil {
+			    errs <- err
+		    }
+		    return err
+            }
+        
+            l, e := net.Listen("tcp", self.kc.Addr())
+            if e != nil {
+        	    fmt.Println("Could not open keeper address %q for listen.", self.kc.Addr())
+		    if ready != nil {
+			    ready <- false
+		    }
+		    if errs != nil {
+			    errs <- e
+		    }
+        	    return e
+            }
+        
+	    if ready != nil {
+		    ready <- true
+	    }
+	    if errs != nil {
+		    errs <- nil
+	    }
+        
+            return http.Serve(l, kserver)
+    }(self, serverUp, serverErr)
+
+    serverReady := <-serverUp
+    errS := <-serverErr
+
+    if !serverReady {
 	    if self.kc.Ready != nil {
 		    self.kc.Ready <- false
 	    }
-	    errorChannel <- err
-            return
+	    return errS
     }
 
-    l, e := net.Listen("tcp", self.kc.Addr())
-    if e != nil {
-	    fmt.Println("Could not open keeper address %q for listen.", self.kc.Addr())
-	    if self.kc.Ready != nil {
-		    self.kc.Ready <- false
-	    }
-	    errorChannel <- e
-            return
-    }
-
-    if self.kc.Ready != nil {
-	    self.kc.Ready <- true
-    }
-
-    errorChannel <- http.Serve(l, kserver)
+    // might need to delay self.kc.Ready <- true until entire StartKeeper is up.
+    return nil
 }
 
 func (self *Keeper) initAliveAndBitmap () error {
@@ -131,8 +154,10 @@ func (self *Keeper) initAliveAndBitmap () error {
       }
 
     }
+
     return nil
 }
+
 
 func (self *Keeper) findBin(binName string) trib.Storage{
       //set alive flag
@@ -241,13 +266,14 @@ func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
 
 func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     var stub string
-    errorChannel := make(chan error)
-    go self.Init("", errorChannel, &stub)
-
-    e := self.initAliveAndBitmap()
+    e := self.Init("", &stub)
     if e != nil {
-      return e
+	    // self.kc.Ready already filled with false if error
+	    return e
     }
+    // self.kc.Ready<-true not filled yet here, we need to delay until StartKeeper is fully prepared.
+
+    errorChannel := make(chan error)
     synClockChannel := make(chan uint64)
     go func() {
         var ret uint64
@@ -278,7 +304,6 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
                         }
                         synClockChannel <- ret
                     }
-                    //self.aliveBackendsLock.Unlock()
                 }(index)
             }
             for i := 0; i < len(self.backends); i+=1 {
@@ -290,12 +315,24 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
         }
     }()
 
+    // unblock any external wait 
+    if self.kc.Ready != nil {
+	    self.kc.Ready <- true
+    }
+
     // boot up replication
-    //self.aliveBackendsLock.Lock()
     go self.replicate(errorChannel)
-    //self.aliveBackendsLock.Unlock()
     // will return when errorChannel is unblocked
-    return <-errorChannel
+    e = <-errorChannel
+    if e != nil {
+//	    if self.kc.Ready != nil {
+//		    self.kc.Ready <- false
+//	    }
+            fmt.Println("StartKeeper replicate channel error ", e)
+	    return e
+    }
+
+    return nil
 }
 
 
@@ -351,8 +388,6 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
         if logEntry.Opcode == "Set" {
             err = successor.Set(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListAppend" {
-          //  fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
-          //  fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
             err = successor.ListAppend(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListRemove" {
             var n int
@@ -387,9 +422,6 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                 if alive == "" &&  len(copies) == 1 {
                     self.replicateLog(index, self.getSuccessor(index), key)
                 }
-                // if key != index {
-                //     self.replicateLog(index, key, key)
-                // }
             }
         }
     }
@@ -410,7 +442,6 @@ func (self *Keeper) crash(index int) {
         // label self no longer has that log
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
-    //it means this backend has nver joined the group
 }
 
 func (self *Keeper) join(index int) {
@@ -466,7 +497,6 @@ func (self *Keeper) getNumberOfCopies(index string) []int {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
-//    fmt.Println("get in successor")
     for index := (srcIndex+1)%len(self.backends);
         index != srcIndex;
         index = (index+1)%len(self.backends) {
