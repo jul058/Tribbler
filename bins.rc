@@ -1,11 +1,13 @@
 {
     "Backs": [
-        "localhost:1170",
-        "localhost:1171",
-        "localhost:1172",
-        "localhost:1173"
+        "localhost:1333",
+        "localhost:1334",
+        "localhost:1335",
+        "localhost:1337",
+        "localhost:1338",
+        "localhost:1339"
     ],
     "Keepers": [
-        "localhost:11357"
+        "localhost:11380"
     ]
 }

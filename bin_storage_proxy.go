@@ -6,7 +6,7 @@ import (
     "trib/colon"
     "net/rpc"
     "strconv"
-    "fmt"
+    // "fmt"
     //"strings"
 )
 
@@ -28,7 +28,6 @@ func (self *BinStorageProxy) Init() {
 }
 
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
-   fmt.Println("enter Bin() with name: ", name)
     self.Init()
     prefix := colon.Escape(name + "::")
     //fmt.Println(name)
@@ -46,23 +45,29 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
         val := self.checkIfValid(index)
         if val {
   //       fmt.Println("index: ", index)
-          bsc = &BinStorageClient{
-            originIndex: int(originIndex),
-            prefix: prefix,
-            client: self.clients[index],
-          }
-          break
+              bsc = &BinStorageClient{
+                originIndex: int(originIndex),
+                prefix: prefix,
+                client: self.clients[index],
+        }
+        // fmt.Printf("%s bin mapped on %d, original Index %d\n", name, index, originIndex)
+        break
       }
     }
     return bsc
 }
 
 func (self *BinStorageProxy) checkIfValid(index uint32) bool {
+  aliveName := alive_bin
+  escapeAliveName := colon.Escape(aliveName + "::")
+  aliveHash := NewHash(escapeAliveName)
   binName := bitmap_bin+strconv.Itoa(int(index))
-  binName = colon.Escape(binName + "::")
+  escapeBinName := colon.Escape(binName + "::")
 //  fmt.Println("enter checkValid with binName: ", binName)
-  binHash := NewHash(binName)
-  originAliveIndex := binHash % uint32(len(self.clients))
+  binHash := NewHash(escapeBinName)
+  aliveFound := false
+  binFound := false
+  originAliveIndex := aliveHash % uint32(len(self.clients))
   count := 0
   for aliveIndex := originAliveIndex;
       count < len(self.clients);
@@ -75,23 +80,44 @@ func (self *BinStorageProxy) checkIfValid(index uint32) bool {
     tmpClient.Close()
     bsc := &BinStorageClient{
       originIndex: int(originAliveIndex),
-      prefix: binName,
+      prefix: escapeAliveName,
       client: self.clients[aliveIndex],
     }
     var result string
     bsc.Get(strconv.Itoa(int(index)), &result)
-/*
-    fmt.Printf("index: %d", aliveIndex)
-    fmt.Println()
-    fmt.Printf("result: %v", result)
-    fmt.Println()
-    fmt.Println()
-   */
+
     if result == "" {
       continue
     }
-    resultBool, _ := strconv.ParseBool(result)
-    return resultBool
+    aliveFound = true
+  }
+
+  originBitmapIndex := binHash % uint32(len(self.clients))
+  count = 0
+  for bitmapIndex := originBitmapIndex;
+      count < len(self.clients);
+      bitmapIndex = (bitmapIndex+1)%uint32(len(self.clients)) {
+    tmpClient, err := rpc.DialHTTP("tcp", self.backs[bitmapIndex])
+    if err != nil {
+      continue
+    }
+    count+=1
+    tmpClient.Close()
+    bsc := &BinStorageClient{
+      originIndex: int(originBitmapIndex),
+      prefix: escapeBinName,
+      client: self.clients[bitmapIndex],
+    }
+    var result string
+    bsc.Get(strconv.Itoa(int(index)), &result)
+
+    if result == "" {
+      continue
+    }
+    binFound = true
+  }
+  if binFound && aliveFound {
+    return true
   }
   return false
 }

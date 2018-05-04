@@ -163,6 +163,9 @@ func (self *Tribber) Post(who, post string, clock uint64) error {
 
     var succ bool
     var newPost string
+    if newClock == clock {
+        newClock += 1
+    }
     newPost, err = TribToString(&trib.Trib{who, post, time.Now(), newClock})
     if err != nil {
         return err
