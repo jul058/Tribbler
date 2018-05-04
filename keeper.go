@@ -391,13 +391,11 @@ func (self *Keeper) crash(index int) {
 
     for _, keyStr := range keys {
         key, _ := strconv.Atoi(keyStr)
-        val := self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
-        if val == "true" {
-          if key == index {
-            self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
-          } else {
+        self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
+        if key == index {
+          self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
+        } else {
             self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
-          }
         }
         // label self no longer has that log
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
@@ -407,7 +405,6 @@ func (self *Keeper) crash(index int) {
 
 func (self *Keeper) join(index int) {
     fmt.Println("Enter join")
-    self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
     //copy data belongs to this backend back to itself
     // for backupIndex := (index-1+len(self.backends))%len(self.backends); 
     //     backupIndex != index; 
@@ -456,6 +453,7 @@ func (self *Keeper) join(index int) {
             self.replicateLog(numPairs[0].Right, index, replicatee)
         }
     }
+    self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
 
 }
 
