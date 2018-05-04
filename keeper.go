@@ -440,12 +440,12 @@ func (self *Keeper) crash(index int) {
 
     for _, keyStr := range keys {
         key, _ := strconv.Atoi(keyStr)
-        self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
-        if key == index {
-          self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
-        } else {
-            self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
-        }
+        // self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
+        // if key == index {
+        //   self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
+        // } else {
+        //     self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
+        // }
         // label self no longer has that log
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
