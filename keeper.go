@@ -276,7 +276,12 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
 	    // self.kc.Ready already filled with false if error
 	    return e
     }
-    e = self.initAliveAndBitmap()
+    var pri int64
+    self.FindPrimary("", &pri) 
+    if pri == self.kc.Id {
+        e = self.initAliveAndBitmap()
+    }
+
     // self.kc.Ready<-true not filled yet here, we need to delay until StartKeeper is fully prepared.
 
     errorChannel := make(chan error)
@@ -284,12 +289,13 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     go func() {
         var ret uint64
         synClock := uint64(0)
+        maxClock := uint64(0)
         for range time.Tick(1 * time.Second) {
 
-	    var pri int64
-	    self.FindPrimary("", &pri)
-    	    if pri != self.kc.Id {
-    		   continue
+    	    var pri int64
+    	    self.FindPrimary("", &pri)
+        	    if pri != self.kc.Id {
+        		   continue
     	    }
 
     	    // do following only if self is primary, i.e. lowest Id
@@ -312,12 +318,17 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
                     }
                 }(index)
             }
+
             for i := 0; i < len(self.backends); i+=1 {
-                if clock := <- synClockChannel; clock > synClock {
-                    synClock = clock
+                if clock := <- synClockChannel; clock > maxClock {
+                    maxClock = clock
                 }
             }
-            synClock += 1
+            if synClock >= maxClock {
+                synClock += 1
+            } else {
+                synClock = maxClock
+            }
         }
     }()
 
@@ -427,6 +438,9 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                 copies := self.getNumberOfCopies(keyStr)
                 alive := self.retryGet(alive_bin, keyStr)
                 if alive == "" && len(copies) == 1 {
+                    if index == 0 {
+                        fmt.Printf("%d is sending %d copy to %d\n", index, key, self.getSuccessor(index))
+                    }
                     self.replicateLog(index, self.getSuccessor(index), key)
                 }
             }

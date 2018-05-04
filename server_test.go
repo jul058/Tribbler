@@ -81,7 +81,7 @@ func TestServerConcur(t *testing.T) {
 	server2 := entries.MakeFrontSingle(addr)
 
 	// tribtest.CheckServerConcur(t, server1)
-	//triblab.MyCheckServerConcur(t, server1, server2)
+	// triblab.MyCheckServerConcur(t, server1, server2)
 	triblab.MyCacheConcurTest(t, server1, server2)
 	//triblab.MyTribberConcurTest(t, server1, server2)
 }
