@@ -158,6 +158,29 @@ func (self *Keeper) initAliveAndBitmap () error {
 }
 
 
+func (self *Keeper) findBin(binName string) trib.Storage{
+      //set alive flag
+      binName = colon.Escape(binName + "::")
+      binHash := NewHash(binName)
+      originAliveIndex := binHash % uint32(len(self.kc.Backs))
+      var bsc trib.Storage
+      for aliveIndex := originAliveIndex; ; aliveIndex = (aliveIndex+1)%uint32(len(self.kc.Backs)) {
+        tmpClient, err := rpc.DialHTTP("tcp", self.kc.Backs[aliveIndex])
+        if err != nil {
+          continue
+        }
+        tmpClient.Close()
+        bsc = &BinStorageClient{
+          originIndex: int(originAliveIndex),
+          prefix: binName,
+          client: self.backends[aliveIndex],
+        }
+        break
+    }
+    return bsc
+}
+
+
 func (self *Keeper) FindPrimary(stub_in string, pri_ret *int64) error {
 	kidChan := make(chan int64)
 	for _, kaddr := range self.kc.Addrs {
