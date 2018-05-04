@@ -94,11 +94,12 @@ func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *st
 func (self *Keeper) initAliveAndBitmap () error {
     aliveBin := self.findBin(alive_bin)
     //set keeper's bin without calling bin()
-    for index, addr := range self.kc.Backs {
-      tmpClient, err := rpc.DialHTTP("tcp",addr)
-      var alive string
-      var bitmap string
-
+    //for index, addr := range self.kc.Backs {
+    for index, _ := range self.kc.Backs {
+//      tmpClient, err := rpc.DialHTTP("tcp",addr)
+      alive := "true"
+      bitmap := "true"
+/*
       if err != nil {
         alive = ""
         bitmap = ""
@@ -108,7 +109,7 @@ func (self *Keeper) initAliveAndBitmap () error {
         bitmap = "true"
         tmpClient.Close()
       }
-
+*/
       //set alive flag
       var succ bool
       aliveBin.Set(&trib.KeyValue{strconv.Itoa(index), alive}, &succ)
@@ -121,6 +122,14 @@ func (self *Keeper) initAliveAndBitmap () error {
       if !succ {
         return fmt.Errorf("Initialzie bitmap Bin failed")
       }
+
+      //initialize added
+      bitMapBin = self.findBin(bitmap_bin+strconv.Itoa((index+1)%len(self.kc.Backs)))
+      bitMapBin.Set(&trib.KeyValue{strconv.Itoa(index), "true"}, &succ)
+      if !succ {
+        return fmt.Errorf("Initialzie bitmap Bin failed")
+      }
+
     }
     return nil
 }
