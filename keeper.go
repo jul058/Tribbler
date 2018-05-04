@@ -249,7 +249,7 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
 	    // self.kc.Ready already filled with false if error
 	    return e
     }
-    // self.kc.Ready not filled yet here, we need to delay until StartKeeper is fully prepared.
+    // self.kc.Ready<-true not filled yet here, we need to delay until StartKeeper is fully prepared.
 
     errorChannel := make(chan error)
     synClockChannel := make(chan uint64)
@@ -296,7 +296,20 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     // boot up replication
     go self.replicate(errorChannel)
     // will return when errorChannel is unblocked
-    return <-errorChannel
+    e <- errorChannel
+    if e != nil {
+	    if self.kc.Ready != nil {
+		    self.kc.Ready <- false
+	    }
+	    return e
+    }
+
+    // unblock any external wait 
+    if self.kc.Ready != nil {
+	    self.kc.Ready <- true
+    }
+
+    return nil
 }
 
 
