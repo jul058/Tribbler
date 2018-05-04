@@ -5,8 +5,9 @@ import (
     "trib"
     "trib/colon"
     "net/rpc"
-    // "strconv"
-    // "fmt"
+    "strconv"
+   // "fmt"
+    //"strings"
 )
 
 type BinStorageProxy struct {
@@ -15,7 +16,6 @@ type BinStorageProxy struct {
     once sync.Once
 }
 var _ trib.BinStorage = new(BinStorageProxy)
-
 
 func (self *BinStorageProxy) Init() {
     // create connections once per BinStorageProxy instance
@@ -28,8 +28,10 @@ func (self *BinStorageProxy) Init() {
 }
 
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
+   //fmt.Println("ender Bin() with name: ", name)
     self.Init()
     prefix := colon.Escape(name + "::")
+    //fmt.Println(name)
     hash := NewHash(prefix)
     originIndex := hash % uint32(len(self.clients))
     //iterately to find available back-end
@@ -41,23 +43,51 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
             continue
         }
         tmpClient.Close()
-        // check whether this backend has it 
-        // err = self.clients[index].Get(strconv.Itoa(int(originIndex)), &str)
-        // if err != nil {
-        //     continue
-        // }
-
-        // if str != "true" {
-        //     // fmt.Printf("%d machine does not have %d data\n", index, int(originIndex))
-        //     continue
-        // }
-        // fmt.Printf("Bin returns %d backend, original: %d\n", index, originIndex)
-        bsc = &BinStorageClient{
-            originIndex: int(originIndex),
-            prefix: prefix,
-            client: self.clients[index],
+        val := self.checkIfValid(index)
+        if val {
+  //       fmt.Println("index: ", index)
+              bsc = &BinStorageClient{
+                originIndex: int(originIndex),
+                prefix: prefix,
+                client: self.clients[index],
         }
+        // fmt.Printf("%s bin mapped on %d, original Index %d\n", name, index, originIndex)
         break
+      }
     }
     return bsc
+}
+
+func (self *BinStorageProxy) checkIfValid(index uint32) bool {
+  binName := bitmap_bin+strconv.Itoa(int(index))
+  binName = colon.Escape(binName + "::")
+//  fmt.Println("enter checkValid with binName: ", binName)
+  binHash := NewHash(binName)
+  originAliveIndex := binHash % uint32(len(self.clients))
+  for aliveIndex := originAliveIndex; ; aliveIndex = (aliveIndex+1)%uint32(len(self.clients)) {
+    tmpClient, err := rpc.DialHTTP("tcp", self.backs[aliveIndex])
+    if err != nil {
+      continue
+    }
+    tmpClient.Close()
+    bsc := &BinStorageClient{
+      originIndex: int(originAliveIndex),
+      prefix: binName,
+      client: self.clients[aliveIndex],
+    }
+    var result string
+    bsc.Get(strconv.Itoa(int(index)), &result)
+/*
+    fmt.Printf("index: %d", aliveIndex)
+    fmt.Println()
+    fmt.Printf("result: %v", result)
+    fmt.Println()
+    fmt.Println()
+   */
+    if result == "" {
+      continue
+    }
+    resultBool, _ := strconv.ParseBool(result)
+    return resultBool
+  }
 }

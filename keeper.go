@@ -5,6 +5,7 @@ import (
     "trib"
     "fmt"
     "strconv"
+    "trib/colon"
     "net"
     "net/http"
     "net/rpc"
@@ -21,9 +22,11 @@ type Keeper struct {
     binStorage trib.BinStorage
 }
 
-func (self *Keeper) Init(stub_in string, stub_ret *string) error {
+func (self *Keeper) Init(stub_in string, errorChannel chan<- error, stub_ret *string) {
     if self.kc == nil {
-	    return fmt.Errorf("Keeper Config. is nil.")
+	    //return fmt.Errorf("Keeper Config. is nil.")
+	    errorChannel <- fmt.Errorf("Keeper Config. is nil.")
+            return
     }
 
     for _, b := range self.kc.Backs {
@@ -31,7 +34,8 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
 		    if self.kc.Ready != nil {
 			    self.kc.Ready <- false
 		    }
-		    return fmt.Errorf("Invalid back-ends address for Keeper config.")
+            errorChannel <- fmt.Errorf("Invalid back-ends address for Keeper config.")
+            return
 	    }
     }
 
@@ -40,7 +44,8 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
 		    if self.kc.Ready != nil {
 			    self.kc.Ready <- false
 		    }
-		    return fmt.Errorf("Invalid Keeper address.")
+            errorChannel <- fmt.Errorf("Invalid Keeper address.")
+            return
 	    }
     }
 
@@ -48,17 +53,14 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
     self.kc.Id = time.Now().UnixNano() / int64(time.Microsecond)
 
     self.binStorage = NewBinClient(self.kc.Backs)
-    for index, addr := range self.kc.Backs {
+
+    for _, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
 
-
         // self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
         // self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
-
-        fmt.Printf("setting alive bin %s\n", strconv.Itoa(index))
     }
-
 
     // Keeper struct initialized, starting Keeper Server
     kserver := rpc.NewServer()
@@ -68,7 +70,8 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
 	    if self.kc.Ready != nil {
 		    self.kc.Ready <- false
 	    }
-	    return err
+	    errorChannel <- err
+            return
     }
 
     l, e := net.Listen("tcp", self.kc.Addr())
@@ -77,16 +80,72 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
 	    if self.kc.Ready != nil {
 		    self.kc.Ready <- false
 	    }
-	    return e
+	    errorChannel <- e
+            return
     }
 
     if self.kc.Ready != nil {
 	    self.kc.Ready <- true
     }
 
-    return http.Serve(l, kserver)
+    errorChannel <- http.Serve(l, kserver)
 }
 
+func (self *Keeper) initAliveAndBitmap () error {
+    aliveBin := self.findBin(alive_bin)
+    //set keeper's bin without calling bin()
+    for index, addr := range self.kc.Backs {
+      tmpClient, err := rpc.DialHTTP("tcp",addr)
+      var alive string
+      var bitmap string
+
+      if err != nil {
+        alive = ""
+        bitmap = ""
+      }
+      if err == nil {
+        alive = "true"
+        bitmap = "true"
+        tmpClient.Close()
+      }
+
+      //set alive flag
+      var succ bool
+      aliveBin.Set(&trib.KeyValue{strconv.Itoa(index), alive}, &succ)
+      if !succ {
+        return fmt.Errorf("Initialzie alive Bin failed")
+      }
+      //set bitmap flag
+      bitMapBin := self.findBin(bitmap_bin+strconv.Itoa(index))
+      bitMapBin.Set(&trib.KeyValue{strconv.Itoa(index), bitmap}, &succ)
+      if !succ {
+        return fmt.Errorf("Initialzie bitmap Bin failed")
+      }
+    }
+    return nil
+}
+
+func (self *Keeper) findBin(binName string) trib.Storage{
+      //set alive flag
+      binName = colon.Escape(binName + "::")
+      binHash := NewHash(binName)
+      originAliveIndex := binHash % uint32(len(self.kc.Backs))
+      var bsc trib.Storage
+      for aliveIndex := originAliveIndex; ; aliveIndex = (aliveIndex+1)%uint32(len(self.kc.Backs)) {
+        tmpClient, err := rpc.DialHTTP("tcp", self.kc.Backs[aliveIndex])
+        if err != nil {
+          continue
+        }
+        tmpClient.Close()
+        bsc = &BinStorageClient{
+          originIndex: int(originAliveIndex),
+          prefix: binName,
+          client: self.backends[aliveIndex],
+        }
+        break
+    }
+    return bsc
+}
 
 func (self *Keeper) FindPrimary(stub_in string, pri_ret *int64) error {
 	kidChan := make(chan int64)
@@ -173,12 +232,13 @@ func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
 
 func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     var stub string
-    e := self.Init("", &stub)
-    if e != nil {
-	    return e
-    }
-    
     errorChannel := make(chan error)
+    go self.Init("", errorChannel, &stub)
+
+    e := self.initAliveAndBitmap()
+    if e != nil {
+      return e
+    }
     synClockChannel := make(chan uint64)
     go func() {
         var ret uint64
@@ -330,10 +390,18 @@ func (self *Keeper) crash(index int) {
 
     for _, keyStr := range keys {
         key, _ := strconv.Atoi(keyStr)
-        fmt.Printf("index: %d, key: %d\n", index, key)
+        val := self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
+        if val == "true" {
+          if key == index {
+            self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
+          } else {
+            self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
+          }
+        }
         // label self no longer has that log
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
+    //it means this backend has nver joined the group
 }
 
 func (self *Keeper) join(index int) {
@@ -417,6 +485,7 @@ func (self *Keeper) getNumberOfCopies(index string) []int {
 }
 
 func (self *Keeper) getSuccessor(srcIndex int) int {
+//    fmt.Println("get in successor")
     for index := (srcIndex+1)%len(self.backends);
         index != srcIndex;
         index = (index+1)%len(self.backends) {
