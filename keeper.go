@@ -419,7 +419,7 @@ func (self *Keeper) replicate(errorChan chan<- error) {
                 key, _ := strconv.Atoi(keyStr)
                 copies := self.getNumberOfCopies(keyStr)
                 alive := self.retryGet(alive_bin, keyStr)
-                if alive == "" &&  len(copies) == 1 {
+                if alive == "" && len(copies) == 1 {
                     self.replicateLog(index, self.getSuccessor(index), key)
                 }
             }

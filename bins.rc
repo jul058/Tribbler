@@ -3,7 +3,9 @@
         "localhost:1333",
         "localhost:1334",
         "localhost:1335",
-        "localhost:1336"
+        "localhost:1336",
+        "localhost:1337",
+        "localhost:1338"
     ],
     "Keepers": [
         "localhost:11380"
