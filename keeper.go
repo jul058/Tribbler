@@ -29,18 +29,22 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
 
     for _, b := range self.kc.Backs {
 	    if b == "" {
-		    if self.kc.Ready != nil {
-			    self.kc.Ready <- false
-		    }
+            go func() {
+    		    if self.kc.Ready != nil {
+    			    self.kc.Ready <- false
+    		    }
+            }()
 		    return fmt.Errorf("Invalid back-ends address for Keeper config.")
 	    }
     }
 
     for _, k := range self.kc.Addrs {
 	    if k == "" {
-		    if self.kc.Ready != nil {
-			    self.kc.Ready <- false
-		    }
+            go func() {
+    		    if self.kc.Ready != nil {
+    			    self.kc.Ready <- false
+    		    }
+            }()
 		    return fmt.Errorf("Invalid Keeper address.")
 	    }
     }
@@ -267,10 +271,12 @@ func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
 func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     var stub string
     e := self.Init("", &stub)
+    fmt.Printf("Keeper::After Init()\n")
     if e != nil {
 	    // self.kc.Ready already filled with false if error
 	    return e
     }
+    e = self.initAliveAndBitmap()
     // self.kc.Ready<-true not filled yet here, we need to delay until StartKeeper is fully prepared.
 
     errorChannel := make(chan error)
@@ -321,6 +327,7 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     }
 
     // boot up replication
+    fmt.Printf("Keeper::Before replicate()\n")
     go self.replicate(errorChannel)
     // will return when errorChannel is unblocked
     e = <-errorChannel
