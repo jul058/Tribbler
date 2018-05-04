@@ -342,8 +342,8 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
         if logEntry.Opcode == "Set" {
             err = successor.Set(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListAppend" {
-            fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
-            fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
+          //  fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
+          //  fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
             err = successor.ListAppend(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListRemove" {
             var n int
@@ -369,7 +369,9 @@ func (self *Keeper) replicate(errorChan chan<- error) {
             self.replicateLog(index, self.getSuccessor(index), index)
             // needs to check whether this backend is hosting other backend's log and that backend is dead. 
             // if so, and it is now holding the only ccpy, then it needs to propogate the log to its successor. 
-            for _, keyStr := range self.retryKeys(bitmap_bin+strconv.Itoa(index), &trib.Pattern{"", ""}) {
+            bookKeep := self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""})
+            fmt.Printf("\nReplicate: node %d is book keeping %s\n\n", indexStr, bookKeep)
+            for _, keyStr := range self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""}) {
                 key, _ := strconv.Atoi(keyStr)
                 copies := self.getNumberOfCopies(keyStr)
                 alive := self.retryGet(alive_bin, keyStr)
@@ -447,7 +449,7 @@ func (self *Keeper) join(index int) {
         sort.Sort(ByKey(numPairs))
         for replicator := 1; replicator < len(successorMap[replicatee]); replicator+=1 {
             // invalidate
-            fmt.Printf("invalidating replicator %d on replicatee %d\n", replicator, replicatee)
+            fmt.Printf("invalidating replicator %d on replicatee %d\n", numPairs[replicator].Right, replicatee)
             self.retrySet(bitmap_bin+strconv.Itoa(numPairs[replicator].Right), &trib.KeyValue{strconv.Itoa(replicatee), ""})
         }
         if len(numPairs) > 0 {
