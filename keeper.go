@@ -343,8 +343,8 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
         if logEntry.Opcode == "Set" {
             err = successor.Set(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListAppend" {
-            fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
-            fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
+          //  fmt.Printf("List append, replicatee %d, replicator %d\n", replicatee, replicator)
+          //  fmt.Printf("List append, key %s, value %s\n", logEntry.Kv.Key, logEntry.Kv.Value)
             err = successor.ListAppend(&logEntry.Kv, &succ)
         } else if logEntry.Opcode == "ListRemove" {
             var n int
@@ -430,7 +430,7 @@ func (self *Keeper) join(index int) {
         aliveIndex, _ := strconv.Atoi(aliveIndexStr)
         // this aliveIndexStr is booking list
         bookKeep := self.retryKeys(bitmap_bin+aliveIndexStr, &trib.Pattern{"", ""})
-        fmt.Printf("node %d is book keeping %s\n", aliveIndex, bookKeep)
+        //fmt.Printf("node %d is book keeping %s\n", aliveIndex, bookKeep)
         // for each replicatee, record their replicator
         for _, replicateeStr := range bookKeep {
             replicatee, _ := strconv.Atoi(replicateeStr)
@@ -448,11 +448,11 @@ func (self *Keeper) join(index int) {
         sort.Sort(ByKey(numPairs))
         for replicator := 1; replicator < len(successorMap[replicatee]); replicator+=1 {
             // invalidate
-            fmt.Printf("invalidating replicator %d on replicatee %d\n", replicator, replicatee)
+            //fmt.Printf("invalidating replicator %d on replicatee %d\n", replicator, replicatee)
             self.retrySet(bitmap_bin+strconv.Itoa(numPairs[replicator].Right), &trib.KeyValue{strconv.Itoa(replicatee), ""})
         }
         if len(numPairs) > 0 {
-            fmt.Printf("replicate log from %d to %d on log %d\n", numPairs[0].Right, index, replicatee)
+            //fmt.Printf("replicate log from %d to %d on log %d\n", numPairs[0].Right, index, replicatee)
             self.replicateLog(numPairs[0].Right, index, replicatee)
         }
     }

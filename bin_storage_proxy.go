@@ -6,7 +6,7 @@ import (
     "trib/colon"
     "net/rpc"
     "strconv"
-//    "fmt"
+    "fmt"
     //"strings"
 )
 
@@ -28,7 +28,7 @@ func (self *BinStorageProxy) Init() {
 }
 
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
-   //fmt.Println("ender Bin() with name: ", name)
+   fmt.Println("ender Bin() with name: ", name)
     self.Init()
     prefix := colon.Escape(name + "::")
     //fmt.Println(name)
@@ -51,6 +51,8 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
             prefix: prefix,
             client: self.clients[index],
           }
+          fmt.Println("index: ", index)
+          fmt.Println()
           break
       }
     }
@@ -63,11 +65,15 @@ func (self *BinStorageProxy) checkIfValid(index uint32) bool {
 //  fmt.Println("enter checkValid with binName: ", binName)
   binHash := NewHash(binName)
   originAliveIndex := binHash % uint32(len(self.clients))
-  for aliveIndex := originAliveIndex; ; aliveIndex = (aliveIndex+1)%uint32(len(self.clients)) {
+  count := 0
+  for aliveIndex := originAliveIndex;
+      count < len(self.clients);
+      aliveIndex = (aliveIndex+1)%uint32(len(self.clients)) {
     tmpClient, err := rpc.DialHTTP("tcp", self.backs[aliveIndex])
     if err != nil {
       continue
     }
+    count+=1
     tmpClient.Close()
     bsc := &BinStorageClient{
       originIndex: int(originAliveIndex),
@@ -89,4 +95,5 @@ func (self *BinStorageProxy) checkIfValid(index uint32) bool {
     resultBool, _ := strconv.ParseBool(result)
     return resultBool
   }
+  return false
 }
