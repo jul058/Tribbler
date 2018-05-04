@@ -28,7 +28,7 @@ func (self *BinStorageProxy) Init() {
 }
 
 func (self *BinStorageProxy) Bin(name string) trib.Storage {
-   fmt.Println("ender Bin() with name: ", name)
+   fmt.Println("enter Bin() with name: ", name)
     self.Init()
     prefix := colon.Escape(name + "::")
     //fmt.Println(name)
@@ -51,8 +51,6 @@ func (self *BinStorageProxy) Bin(name string) trib.Storage {
             prefix: prefix,
             client: self.clients[index],
           }
-          fmt.Println("index: ", index)
-          fmt.Println()
           break
       }
     }
