@@ -9,6 +9,7 @@ import (
     "net/http"
     "net/rpc"
     "sort"
+    "trib/colon"
 )
 
 const log_key       = "LOG_KEY"
@@ -48,7 +49,7 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
     self.kc.Id = time.Now().UnixNano() / int64(time.Microsecond)
 
     self.binStorage = NewBinClient(self.kc.Backs)
-    for index, addr := range self.kc.Backs {
+    for _, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
 
