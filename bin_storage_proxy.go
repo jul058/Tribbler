@@ -86,7 +86,7 @@ func (self *BinStorageProxy) checkIfValid(index uint32) bool {
     var result string
     bsc.Get(strconv.Itoa(int(index)), &result)
 
-    if result == "" {
+    if result != "true" {
       continue
     }
     aliveFound = true
@@ -111,7 +111,7 @@ func (self *BinStorageProxy) checkIfValid(index uint32) bool {
     var result string
     bsc.Get(strconv.Itoa(int(index)), &result)
 
-    if result == "" {
+    if result != "true" {
       continue
     }
     binFound = true

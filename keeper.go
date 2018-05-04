@@ -9,6 +9,7 @@ import (
     "net/http"
     "net/rpc"
     "sort"
+    "sync"
     "trib/colon"
 )
 
@@ -20,6 +21,7 @@ type Keeper struct {
     kc *trib.KeeperConfig
     backends []trib.Storage
     binStorage trib.BinStorage
+    cjLock sync.Mutex
 }
 
 func (self *Keeper) Init(stub_in string, stub_ret *string) error {
@@ -56,11 +58,6 @@ func (self *Keeper) Init(stub_in string, stub_ret *string) error {
     for _, addr := range self.kc.Backs {
         client := NewClient(addr)
         self.backends = append(self.backends, client)
-
-
-        // self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), "true"})
-        // self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
-    }
 
 
     // Keeper struct initialized, starting Keeper Server
@@ -123,20 +120,9 @@ func (self *Keeper) initAliveAndBitmap () error {
     //set keeper's bin without calling bin()
     //for index, addr := range self.kc.Backs {
     for index, _ := range self.kc.Backs {
-//      tmpClient, err := rpc.DialHTTP("tcp",addr)
       alive := "true"
       bitmap := "true"
-/*
-      if err != nil {
-        alive = ""
-        bitmap = ""
-      }
-      if err == nil {
-        alive = "true"
-        bitmap = "true"
-        tmpClient.Close()
-      }
-*/
+
       //set alive flag
       var succ bool
       aliveBin.Set(&trib.KeyValue{strconv.Itoa(index), alive}, &succ)
@@ -158,7 +144,6 @@ func (self *Keeper) initAliveAndBitmap () error {
       }
 
     }
-
     return nil
 }
 
@@ -271,7 +256,6 @@ func (self *Keeper) retryKeys(bin_key string, pattern *trib.Pattern) []string {
 func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     var stub string
     e := self.Init("", &stub)
-    fmt.Printf("Keeper::After Init()\n")
     if e != nil {
 	    // self.kc.Ready already filled with false if error
 	    return e
@@ -306,6 +290,8 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
                     } else {
                         if self.retryGet(alive_bin, strconv.Itoa(i)) == "" {
                             fmt.Println("about to join, ", i)
+                            self.retrySet(alive_bin,
+                              &trib.KeyValue{strconv.Itoa(i), "false"})
                             self.join(i)
                         }
                         synClockChannel <- ret
@@ -332,9 +318,6 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     // will return when errorChannel is unblocked
     e = <-errorChannel
     if e != nil {
-//	    if self.kc.Ready != nil {
-//		    self.kc.Ready <- false
-//	    }
             fmt.Println("StartKeeper replicate channel error ", e)
 	    return e
     }
@@ -372,12 +355,6 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
     }
 
 
-    // successor has self log
-    // fmt.Printf("replicator: %d, replicatee: %d\n", replicator, replicatee)
-    // fmt.Printf("successorLog: %s, backendLog: %s\n", successorLog.L, backendLog.L)
-    // self.bitmap[replicator][src] = true
-
-    //fmt.Println("set true: [%d][%d]",replicator, src)
     for i := len(successorLog.L); i < len(backendLog.L); i+=1 {
         var succ bool
         err = successor.ListAppend(&trib.KeyValue{log_key + "_" + strconv.Itoa(src), backendLog.L[i]}, &succ)
@@ -413,21 +390,22 @@ func (self *Keeper) replicateLog(replicatee, replicator, src int) {
 func (self *Keeper) replicate(errorChan chan<- error) {
     for range time.Tick(1 * time.Second) {
         for _, indexStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
-            index, _ := strconv.Atoi(indexStr)
-            // fmt.Printf("alive: %d, %d\n", idx, index)
-            self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(index), "true"})
-            // relicate self
-            self.replicateLog(index, self.getSuccessor(index), index)
-            // needs to check whether this backend is hosting other backend's log and that backend is dead. 
-            // if so, and it is now holding the only ccpy, then it needs to propogate the log to its successor. 
-            // bookKeep := self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""})
-            // fmt.Printf("\nReplicate: node %d is book keeping %s\n\n", indexStr, bookKeep)
-            for _, keyStr := range self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""}) {
-                key, _ := strconv.Atoi(keyStr)
-                copies := self.getNumberOfCopies(keyStr)
-                alive := self.retryGet(alive_bin, keyStr)
-                if alive == "" && len(copies) == 1 {
-                    self.replicateLog(index, self.getSuccessor(index), key)
+            if self.retryGet(alive_bin, indexStr) == "true" {
+                index, _ := strconv.Atoi(indexStr)
+                self.retrySet(bitmap_bin+strconv.Itoa(index),
+                  &trib.KeyValue{strconv.Itoa(index), "true"})
+                // relicate self
+                self.replicateLog(index, self.getSuccessor(index), index)
+                // needs to check whether this backend is hosting other backend's log and that backend is dead. 
+               // if so, and it is now holding the only ccpy, then it needs to propogate the log to its successor. 
+                for _, keyStr :=
+                  range self.retryKeys(bitmap_bin+indexStr, &trib.Pattern{"", ""}) {
+                    key, _ := strconv.Atoi(keyStr)
+                    copies := self.getNumberOfCopies(keyStr)
+                    alive := self.retryGet(alive_bin, keyStr)
+                    if alive != "true" && len(copies) == 1 {
+                        self.replicateLog(index, self.getSuccessor(index), key)
+                    }
                 }
             }
         }
@@ -435,23 +413,29 @@ func (self *Keeper) replicate(errorChan chan<- error) {
 }
 
 func (self *Keeper) crash(index int) {
+    self.cjLock.Lock()
+    defer self.cjLock.Unlock()
     self.retrySet(alive_bin, &trib.KeyValue{strconv.Itoa(index), ""})
     keys := self.retryKeys(bitmap_bin+strconv.Itoa(index), &trib.Pattern{"", ""})
 
     for _, keyStr := range keys {
         key, _ := strconv.Atoi(keyStr)
-        // self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
-        // if key == index {
-        //   self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
-        // } else {
-        //     self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
-        // }
+/*
+         self.retryGet(bitmap_bin+strconv.Itoa(index), keyStr)
+         if key == index {
+           self.replicateLog(self.getSuccessor(index), self.getSuccessor(self.getSuccessor(index)), index)
+         } else {
+             self.replicateLog(self.getPredecessor(index), self.getSuccessor(index), key)
+         }
+*/
         // label self no longer has that log
         self.retrySet(bitmap_bin+strconv.Itoa(index), &trib.KeyValue{strconv.Itoa(key), ""})
     }
 }
 
 func (self *Keeper) join(index int) {
+    self.cjLock.Lock()
+    defer self.cjLock.Unlock()
     fmt.Println("Enter join")
     successorMap := make([][]int, len(self.backends))
     for i := range successorMap {
@@ -459,15 +443,17 @@ func (self *Keeper) join(index int) {
     }
 
     for _, replicatorStr := range self.retryKeys(alive_bin, &trib.Pattern{"", ""}) {
-        replicator, _ := strconv.Atoi(replicatorStr)
-        // this replicatorStr is booking list
-        bookKeep := self.retryKeys(bitmap_bin+replicatorStr, &trib.Pattern{"", ""})
-        fmt.Printf("node %d is book keeping %s\n", replicator, bookKeep)
-        // for each replicatee, record their replicator
-        for _, replicateeStr := range bookKeep {
+      if self.retryGet(alive_bin, replicatorStr) == "true" {
+          replicator, _ := strconv.Atoi(replicatorStr)
+          // this replicatorStr is booking list
+          bookKeep := self.retryKeys(bitmap_bin+replicatorStr, &trib.Pattern{"", ""})
+          //fmt.Printf("node %d is book keeping %s\n", replicator, bookKeep)
+          // for each replicatee, record their replicator
+          for _, replicateeStr := range bookKeep {
             replicatee, _ := strconv.Atoi(replicateeStr)
             successorMap[replicatee] = append(successorMap[replicatee], replicator)
-        }
+          }
+      }
     }
 
     for replicatee := range successorMap {
@@ -480,9 +466,10 @@ func (self *Keeper) join(index int) {
         numPairs = append(numPairs, 
             &NumPair{(index+len(self.backends)-replicatee)%len(self.backends), index})
         sort.Sort(ByKey(numPairs))
-        self.replicateLog(numPairs[0].Right, numPairs[1].Right, replicatee)
-        self.replicateLog(numPairs[1].Right, numPairs[0].Right, replicatee)
-
+        if len(numPairs) >= 2 {
+            self.replicateLog(numPairs[0].Right, numPairs[1].Right, replicatee)
+            self.replicateLog(numPairs[1].Right, numPairs[0].Right, replicatee)
+        }
         for replicator := 2; replicator < len(numPairs); replicator+=1 {
             // invalidate
             fmt.Printf("invalidating replicator %d on replicatee %d\n", numPairs[replicator].Right, replicatee)
