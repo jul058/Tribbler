@@ -5,7 +5,6 @@ import (
     "trib"
     "fmt"
     "strconv"
-    "trib/colon"
     "net"
     "net/http"
     "net/rpc"
@@ -296,7 +295,7 @@ func (self *Keeper) StartKeeper(stub_in string, stub_ret *string) error {
     // boot up replication
     go self.replicate(errorChannel)
     // will return when errorChannel is unblocked
-    e <- errorChannel
+    e = <-errorChannel
     if e != nil {
 	    if self.kc.Ready != nil {
 		    self.kc.Ready <- false
