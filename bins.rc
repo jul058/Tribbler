@@ -8,6 +8,8 @@
         "localhost:1339"
     ],
     "Keepers": [
-        "localhost:11380"
+        "localhost:11390",
+        "localhost:11391",
+        "localhost:11392"
     ]
 }

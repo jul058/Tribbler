@@ -3,7 +3,9 @@ package triblab
 import (
     "errors"
     "fmt"
+    "math/rand"
     "sort"
+    "strconv"
     "time"
     "trib"
 )
@@ -13,6 +15,7 @@ type Tribber struct {
 }
 var _ trib.Server = new(Tribber)
 
+const cache_bin_num         = 10
 const users_list_key        = "USERS_LIST"
 const users_list_cache      = "USERS_LIST_CACHE"
 const existed_key           = "EXISTED"
@@ -83,9 +86,18 @@ func (self *Tribber) SignUp(user string) error {
     } else if exist == true {
         return errors.New(fmt.Sprintf("SignUp::User '%s' already exists.", user))
     }
-    storage := self.binStorage.Bin(users_list_key)
+    hash := NewHash(user)
+    cacheStorage := self.binStorage.Bin(users_list_cache+strconv.Itoa(int(hash)%cache_bin_num))
+    userList := new(trib.List)
     var succ bool
-    err := storage.Set(&trib.KeyValue{ user, existed_key }, &succ)
+    err := cacheStorage.Keys(&trib.Pattern{"", ""}, userList)
+    if err == nil {
+        if len(userList.L) < trib.MinListUser {
+            err = cacheStorage.Set(&trib.KeyValue{user, existed_key}, &succ)
+        }
+    }
+    storage := self.binStorage.Bin(users_list_key)
+    err = storage.Set(&trib.KeyValue{ user, existed_key }, &succ)
     if err != nil {
         return err
     }
@@ -101,7 +113,7 @@ func (self *Tribber) SignUp(user string) error {
 // of at lest 20 of them needs to be listed.
 // The result should be sorted in alphabetical order.
 func (self *Tribber) ListUsers() ([]string, error) {
-    cache := self.binStorage.Bin(users_list_cache)
+    cache := self.binStorage.Bin(users_list_cache+strconv.Itoa(rand.Int()%cache_bin_num))
     storage := self.binStorage.Bin(users_list_key)
     userList := new(trib.List)
     var succ bool
@@ -178,7 +190,7 @@ func (self *Tribber) Post(who, post string, clock uint64) error {
         return errors.New(fmt.Sprintf("Post::Failed due to Storage error."))
     }
     // 1/5 of the chance gc gets run
-    if newClock % uint64(5) == 0 {
+    if rand.Int() % 5 == 0 {
         go self.gc(who)
     }
     return nil
@@ -248,8 +260,16 @@ func (self *Tribber) Follow(who, whom string) error {
         return errors.New(fmt.Sprintf("Follow::User '%s' is already following '%s'", who, whom))
     }
     storage := self.binStorage.Bin(who)
+    currentFollow := new(trib.List)
+    err := storage.Keys(&trib.Pattern{"", ""}, currentFollow)
+    if err != nil {
+        return err
+    }
+    if len(currentFollow.L) >= trib.MaxFollowing {
+        return errors.New(fmt.Sprintf("Follow::Exceed maximum number of following."))
+    }
     var succ bool
-    err := storage.Set(&trib.KeyValue{whom, existed_key}, &succ)
+    err = storage.Set(&trib.KeyValue{whom, existed_key}, &succ)
     if err != nil {
         return err
     }
